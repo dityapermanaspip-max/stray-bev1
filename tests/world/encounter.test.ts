@@ -23,6 +23,7 @@ test('chance per step follows density, capped at full, and luck lowers it', () =
 test('quiet fields send single creatures, full ones up to group_max', () => {
   assert.equal(groupLimit(cfg.encounter, meadow()), 1);
   assert.equal(groupLimit(cfg.encounter, [{ species: 'cat', natives: 10000, corrupted: 0, safe: 0, max: 10000 }]), 4);
+  assert.equal(groupLimit(cfg.encounter, [{ species: 'cat', natives: 10000, corrupted: 0, safe: 0, max: 10000 }], 2), 2); // next to a town
 });
 
 test('species by head count, corrupted by their share', () => {

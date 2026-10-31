@@ -37,6 +37,7 @@ export type ItemDef = {
   stack: boolean; // stacks have no instances; pieces are one row each (gear, carcasses)
   value: number; // base copper price (a town at half stock sells at this); 0 = worthless
   goods: string[]; // trade families for town specialties (wood, chicken, ...)
+  taboo: boolean; // most folk will not eat or trade it (cat meat): no shop takes or stocks it
   edible: boolean | null; // null = not food
   rotsTo: string | null; // what this becomes when its carcass was rotten
   carcassOf: string | null; // species this carcass came from
@@ -83,6 +84,7 @@ export function parseItem(
     stack,
     value: Number(data.value ?? 0),
     goods: Array.isArray(data.goods) ? data.goods.map(String) : [],
+    taboo: data.taboo === true,
     edible: typeof data.edible === 'boolean' ? data.edible : null,
     rotsTo: typeof data.rots_to === 'string' ? data.rots_to : null,
     carcassOf: typeof data.carcass_of === 'string' ? data.carcass_of : null,

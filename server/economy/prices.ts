@@ -6,12 +6,22 @@ import type { ItemDef } from '../inventory/items.ts';
 // so whatever a town has plenty of also fetches little there. A town keeps much more of its specialty goods
 // (bigger capacity, started fuller): they are cheap there, and one sale barely moves their price.
 
-export const tradeable = (cfg: EconomyConfig, item: ItemDef) => item.value > 0 && cfg.capacity[item.type] !== undefined;
+export const tradeable = (cfg: EconomyConfig, item: ItemDef) => item.value > 0 && !item.taboo && cfg.capacity[item.type] !== undefined;
+
+// The shop shelf holds finished goods only: gear and tools (shop_sells types) and whatever a craftsman makes.
+// Raw catch and materials it buys sit in its store for the craftsmen; bring your own to have something made.
+export const sellsFinished = (cfg: EconomyConfig, item: ItemDef, crafted: ReadonlySet<string>) =>
+  cfg.shopSellsTypes.includes(item.type) || crafted.has(item.name);
 
 export const isSpecialty = (item: ItemDef, specialties: readonly string[]) => item.goods.some((g) => specialties.includes(g));
 
 export function capacityOf(cfg: EconomyConfig, item: ItemDef, specialties: readonly string[]): number {
   return Math.max(1, Math.round((cfg.capacity[item.type] ?? 0) * (isSpecialty(item, specialties) ? cfg.specialtyMult : 1)));
+}
+
+// What the villagers keep of an item: the shop never sells below it (consumption may still eat into it).
+export function safeQty(cfg: EconomyConfig, item: ItemDef, specialties: readonly string[]): number {
+  return Math.round(capacityOf(cfg, item, specialties) * (isSpecialty(item, specialties) ? cfg.specialtySafeFill : cfg.safeFill));
 }
 
 // What a new town keeps of an item.

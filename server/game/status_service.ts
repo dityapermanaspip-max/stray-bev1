@@ -14,7 +14,9 @@ import type { GameWorld } from './world.ts';
 type Ctx = { world: GameWorld; rng: Rng };
 
 const say = (c: Ctx, key: string) => c.world.data.lines.pick(c.rng, key, 0, 'self')?.text ?? null;
-const refusal = (error: string) => (error === 'not_in_town' ? 'loadout.not_here' : 'battle.cannot');
+// Refusal code to its sentence pool (all listed in REFUSAL_LINE_KEYS, checked at startup).
+const refusal = (kind: 'loadout' | 'gear', error: string) =>
+  error === 'not_in_town' ? 'loadout.not_here' : error === 'in_battle' ? 'loadout.in_battle' : `${kind}.${error}`;
 
 export async function statusPanel(c: Ctx, entityId: string, place: SwapPlace, line: string | null = null): Promise<StatusPanel> {
   const { cfg, lines } = c.world.data;
@@ -32,7 +34,7 @@ export async function changeLoadout(c: Ctx, entityId: string, place: SwapPlace, 
   const state = await loadEntityState(c.world.pool, entityId);
   const slot = Math.floor(Number(req?.slot));
   const error = req?.move ? equip(cfg, state.loadout, state.progress, moves, slot, String(req.move), place) : unequip(cfg, state.loadout, slot, place);
-  if (error) return statusPanel(c, entityId, place, say(c, refusal(error)));
+  if (error) return statusPanel(c, entityId, place, say(c, refusal('loadout', error)));
   await saveLoadout(c.world.pool, entityId, state.loadout);
   return statusPanel(c, entityId, place);
 }
@@ -48,7 +50,7 @@ export async function changeGear(c: Ctx, entityId: string, place: SwapPlace, req
     const gearRef: GearRef = inv.pieces.some((p) => p.id === ref) ? { piece: ref } : { stack: ref };
     change = equipGear(cfg, c.world.catalog, inv, state.progress, gearRef, place, req?.slot ? String(req.slot) : null);
   }
-  if (typeof change === 'string') return statusPanel(c, entityId, place, say(c, refusal(change)));
+  if (typeof change === 'string') return statusPanel(c, entityId, place, say(c, refusal('gear', change)));
   await saveGear(c.world.pool, entityId, inv, state.progress);
   const key = req && 'remove' in req ? unequipLineKey(change.kind) : equipLineKey(change.kind);
   return statusPanel(c, entityId, place, say(c, change.learned ? 'epiphany_weapon' : key));

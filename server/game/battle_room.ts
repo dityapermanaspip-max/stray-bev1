@@ -1,5 +1,6 @@
 import { Room, type Client } from '@colyseus/core';
 import { createBattleRow, snapshotBattle } from '../data/battle_repo.ts';
+import { stopFighting, withEntity } from '../util/entity_lock.ts';
 import { createRng } from '../util/rng.ts';
 import type { ActRequest, BattleLine, BattleView } from '../../shared/battle.ts';
 import { finishFight } from './battle_end.ts';
@@ -40,12 +41,17 @@ export class BattleRoom extends Room<{ client: BattleClient }> {
 
   async onCreate(order: BattleOrder) {
     const world = BattleRoom.world;
-    this.fight = await setUpFight(world, order);
+    this.fight = await withEntity(order.entityId, () => setUpFight(world, order)); // after any pending field action
     this.words = { lines: world.data.lines, rng: this.rng, moves: world.data.moves };
     this.battleId = await createBattleRow(world.pool, world.roundId, fightState(this.fight));
     await this.snapshot();
     this.setSimulationInterval((dt) => this.tick(dt), TICK_MS);
     this.clock.setTimeout(() => this.start('ai'), JOIN_WAIT_MS);
+  }
+
+  // Never leave a player marked as fighting, even if the room goes away without an end.
+  onDispose() {
+    if (this.fight) stopFighting(this.fight.order.entityId);
   }
 
   // Only the seat the field room reserved can join; its auth data names the player.
@@ -114,12 +120,13 @@ export class BattleRoom extends Room<{ client: BattleClient }> {
   private async end() {
     this.ended = true;
     try {
-      const result = await finishFight({ world: BattleRoom.world, rng: this.rng }, this.fight, this.battleId);
+      const result = await withEntity(this.fight.order.entityId, () => finishFight({ world: BattleRoom.world, rng: this.rng }, this.fight, this.battleId));
       this.broadcast('result', result);
     } catch (err) {
       console.error(`battle save failed: ${(err as Error).message}`);
       this.broadcast('result', { won: this.fight.instance.winner === this.fight.player.side, lines: [], taken: [] });
     }
+    stopFighting(this.fight.order.entityId);
     if (this.clients.length === 0) return void this.disconnect();
     this.clock.setTimeout(() => this.disconnect(), CLOSE_AFTER_MS);
   }

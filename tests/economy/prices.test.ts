@@ -7,7 +7,7 @@ import { cfg } from '../fixtures/battle_data.ts';
 const e = cfg.economy;
 const item = (over: Partial<ItemDef>): ItemDef => ({
   name: 'x', type: 'food', shape: null, material: null, weight: 1, maxDurability: null, defaultQuality: 'common', stack: true,
-  value: 3, goods: [], edible: true, rotsTo: null, carcassOf: null, wield: null, worn: null, effects: [], ...over,
+  value: 3, goods: [], taboo: false, edible: true, rotsTo: null, carcassOf: null, wield: null, worn: null, effects: [], ...over,
 });
 const meat = item({ name: 'chicken_meat', goods: ['chicken'] });
 const sword = item({ name: 'iron_sword', type: 'weapon', value: 120, stack: false });

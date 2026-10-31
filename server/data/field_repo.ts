@@ -75,7 +75,7 @@ export async function devRoundId(pool: pg.Pool): Promise<string | null> {
 // Hexes and borders of a round, for exit links.
 export async function loadLinks(pool: pg.Pool, roundId: string): Promise<WorldLinks> {
   const [hexes, corridors] = await Promise.all([
-    pool.query<{ id: string; q: number; r: number }>('SELECT id::text, q, r FROM world.hexes WHERE round_id = $1', [roundId]),
+    pool.query<{ id: string; q: number; r: number; town: boolean }>("SELECT id::text, q, r, field_kind = 'town' AS town FROM world.hexes WHERE round_id = $1", [roundId]),
     pool.query<{ border: string; hex_a: string; hex_b: string; corridor: string | null }>(
       `SELECT bo.id::text AS border, bo.hex_a::text, bo.hex_b::text, c.id::text AS corridor
        FROM world.borders bo LEFT JOIN world.corridors c ON c.border_id = bo.id

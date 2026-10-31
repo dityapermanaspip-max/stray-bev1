@@ -6,6 +6,7 @@ import { BATTLE_ROOM } from '../../shared/battle.ts';
 import { BattleRoom } from './battle_room.ts';
 import { FIELD_ROOM, type WhereAnswer } from '../../shared/field.ts';
 import { FieldRoom } from './field_room.ts';
+import { startTicker } from './ticker.ts';
 import { loadGameWorld, placePlayer } from './world.ts';
 
 // Game server (Colyseus). Dev only for now: players join by name, no password, localhost only.
@@ -53,4 +54,5 @@ const server = defineServer({
 });
 
 await server.listen(port, HOST);
+await startTicker(FieldRoom.world); // population rules and town ticks, world hours
 console.log(`Game server on ws://${HOST}:${port} (dev join)`);

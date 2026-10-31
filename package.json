@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit",
     "sim": "node --env-file=.env server/sim/run_battle.ts",
     "sim:world": "node --env-file=.env server/sim/world_sim.ts",
+    "sim:town": "node --env-file=.env server/sim/town_sim.ts",
     "session": "node --env-file=.env server/sim/session.ts",
     "play": "node --env-file=.env server/sim/play.ts",
     "admin": "node --env-file=.env server/admin/server.ts",

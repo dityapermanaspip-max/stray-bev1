@@ -1,6 +1,6 @@
 import type { BalanceConfig } from '../config/balance.ts';
 import type { StockRow, Town } from '../data/economy_repo.ts';
-import { buyPrice, capacityOf, sellPrice, tradeable } from '../economy/prices.ts';
+import { buyPrice, capacityOf, safeQty, sellPrice, sellsFinished, tradeable } from '../economy/prices.ts';
 import { addItem, removePiece, removeStack, stackKey, type Inventory, type Piece } from '../inventory/bag.ts';
 import type { ItemCatalog } from '../inventory/items.ts';
 import { carcassData, freshnessTier } from '../inventory/loot.ts';
@@ -9,13 +9,13 @@ import { addCoins, payCoins } from '../inventory/money.ts';
 // The town shop. It sells from the town's stock at the stock price and buys at its share of that price,
 // so what a town has plenty of is cheap to buy and fetches little to sell. Whatever it buys goes on its shelf.
 // Villagers have a ceiling on what they will pay for one thing (max_buy) and a till that can run dry.
-// The fill that sets a price counts every quality of the item together.
+// The fill that sets a price counts every quality of the item together. The shelf holds finished goods only
+// (gear, tools, craftsman-made): the raw catch it buys stays in its store. Taboo goods are never taken or stocked.
+// It never sells below the villagers' safe stock.
 
 export type Offer = { ref: string; item: string; qty: number; price: number }; // the player sells
 export type Ware = { key: string; item: string; qty: number; price: number }; // the player buys
 export type Trade = { deltas: StockRow[]; purseDelta: number; line: string };
-
-const NOT_SOLD_BACK = new Set(['carcass']); // carcasses keep per-kill data a shelf count cannot hold
 
 function held(town: Town, item: string): number {
   let n = 0;
@@ -23,11 +23,11 @@ function held(town: Town, item: string): number {
   return n;
 }
 
-// What the town asks for one, at its current stock.
-export function townPrice(cfg: BalanceConfig, catalog: ItemCatalog, town: Town, item: string, quality: string): number | null {
+// What the town asks for one, at its current stock (or with `extra` more on the shelf).
+export function townPrice(cfg: BalanceConfig, catalog: ItemCatalog, town: Town, item: string, quality: string, extra = 0): number | null {
   const def = catalog.get(item);
   if (!def || !tradeable(cfg.economy, def)) return null;
-  return sellPrice(cfg.economy, def, quality, held(town, item), capacityOf(cfg.economy, def, town.specialties));
+  return sellPrice(cfg.economy, def, quality, held(town, item) + extra, capacityOf(cfg.economy, def, town.specialties));
 }
 
 // 0..1: wear for gear, freshness (and taint) for carcasses, whole for everything else. null = the shop refuses it.
@@ -43,8 +43,10 @@ function condition(cfg: BalanceConfig, catalog: ItemCatalog, piece: Piece | null
   return max > 0 ? piece.durability / max : 1;
 }
 
+// The shop prices what it buys at the stock it will have once it holds it, so buying the last one and selling it
+// straight back always loses (the empty-shelf price never leaks into what the shop pays).
 function offerPrice(cfg: BalanceConfig, catalog: ItemCatalog, town: Town, item: string, quality: string, piece: Piece | null, now: number) {
-  const price = townPrice(cfg, catalog, town, item, quality);
+  const price = townPrice(cfg, catalog, town, item, quality, 1);
   const cond = condition(cfg, catalog, piece, now);
   return price === null || cond === null ? null : buyPrice(cfg.economy, price, cond);
 }
@@ -63,13 +65,25 @@ export function shopOffers(cfg: BalanceConfig, catalog: ItemCatalog, town: Town,
   return out;
 }
 
-// What is on the shelf.
-export function shopWares(cfg: BalanceConfig, catalog: ItemCatalog, town: Town): Ware[] {
+const onShelf = (cfg: BalanceConfig, catalog: ItemCatalog, crafted: ReadonlySet<string>, item: string) => {
+  const def = catalog.get(item);
+  return !!def && sellsFinished(cfg.economy, def, crafted);
+};
+
+// What is on the shelf. crafted: finished craftsman goods (made by a recipe, not an input of one).
+// What of a stock row the shop may sell: above the villagers' safe stock (counted over all qualities of the item).
+function spare(cfg: BalanceConfig, catalog: ItemCatalog, town: Town, row: StockRow): number {
+  const def = catalog.get(row.item);
+  return def ? Math.max(0, Math.min(row.qty, held(town, row.item) - safeQty(cfg.economy, def, town.specialties))) : 0;
+}
+
+export function shopWares(cfg: BalanceConfig, catalog: ItemCatalog, town: Town, crafted: ReadonlySet<string>): Ware[] {
   return [...town.stock.values()]
-    .filter((r) => r.qty > 0 && !NOT_SOLD_BACK.has(catalog.get(r.item)?.type ?? ''))
+    .filter((r) => onShelf(cfg, catalog, crafted, r.item))
     .flatMap((r) => {
+      const qty = spare(cfg, catalog, town, r);
       const price = townPrice(cfg, catalog, town, r.item, r.quality);
-      return price === null ? [] : [{ key: stackKey(r.item, r.quality), item: r.item, qty: r.qty, price }];
+      return price === null || qty < 1 ? [] : [{ key: stackKey(r.item, r.quality), item: r.item, qty, price }];
     });
 }
 
@@ -100,9 +114,9 @@ export function sellToShop(cfg: BalanceConfig, catalog: ItemCatalog, town: Town,
 }
 
 // The player buys one off the shelf (a stock key).
-export function buyFromShop(cfg: BalanceConfig, catalog: ItemCatalog, town: Town, inv: Inventory, key: string): Trade | string {
+export function buyFromShop(cfg: BalanceConfig, catalog: ItemCatalog, town: Town, inv: Inventory, key: string, crafted: ReadonlySet<string>): Trade | string {
   const row = town.stock.get(key);
-  if (!row || row.qty < 1 || NOT_SOLD_BACK.has(catalog.get(row.item)?.type ?? '')) return 'town.shop.out';
+  if (!row || spare(cfg, catalog, town, row) < 1 || !onShelf(cfg, catalog, crafted, row.item)) return 'town.shop.out';
   const price = townPrice(cfg, catalog, town, row.item, row.quality);
   if (price === null) return 'town.shop.out';
   if (!payCoins(cfg, catalog, inv, price)) return 'town.shop.cannot_pay';

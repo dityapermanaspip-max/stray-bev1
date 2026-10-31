@@ -20,9 +20,9 @@ export function encounterPermille(cfg: EncounterConfig, luck: LuckConfig, rows: 
   return base > 0 ? badChance(luck, base, leaderLuck) : 0;
 }
 
-// Largest group at this density: 1 when quiet, up to group_max when full.
-export function groupLimit(cfg: EncounterConfig, rows: PopRow[]): number {
-  return 1 + Math.floor(density(rows) * (cfg.groupMax - 1));
+// Largest group at this density: 1 when quiet, up to group_max when full, never above cap (the corridor next to a town).
+export function groupLimit(cfg: EncounterConfig, rows: PopRow[], cap = cfg.groupMax): number {
+  return Math.min(cap, 1 + Math.floor(density(rows) * (cfg.groupMax - 1)));
 }
 
 // Species by head count; each creature is corrupted by its species' share.
@@ -35,9 +35,9 @@ function pickFoe(rows: PopRow[], rng: Rng): Foe {
 }
 
 // One step: null, or the group that jumps out.
-export function rollEncounter(cfg: EncounterConfig, luck: LuckConfig, rows: PopRow[], leaderLuck: number, rng: Rng): Foe[] | null {
+export function rollEncounter(cfg: EncounterConfig, luck: LuckConfig, rows: PopRow[], leaderLuck: number, rng: Rng, cap = cfg.groupMax): Foe[] | null {
   if (!rollPermille(rng, encounterPermille(cfg, luck, rows, leaderLuck))) return null;
-  const size = 1 + Math.floor(rng() * groupLimit(cfg, rows));
+  const size = 1 + Math.floor(rng() * groupLimit(cfg, rows, cap));
   return Array.from({ length: size }, () => pickFoe(rows, rng));
 }
 

@@ -1,7 +1,7 @@
 // Which field an exit leads to. Open hex fields have exits d0-d5, one per hex direction;
 // a border between hex A and hex B is a chain of corridors 1..n from A to B, each with exits a (toward A) and b (toward B).
 
-export type Hex = { id: string; q: number; r: number };
+export type Hex = { id: string; q: number; r: number; town?: boolean };
 export type Border = { a: Hex; b: Hex; corridors: string[] }; // corridor ids in position order
 export type WorldLinks = { hexes: Map<string, Hex>; borders: Border[] };
 export type ExitTarget = { ref: string; exit: string };

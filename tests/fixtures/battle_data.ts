@@ -49,11 +49,22 @@ export const RAW_CONFIG = new Map<string, unknown>([
   ['town.inn', { price: 20 }],
   ['player_start_copper', 50],
   ['economy', {
-    price_empty_mult: 2, price_full_mult: 0.5, shop_buy_share: 0.7,
+    price_empty_mult: 2, price_full_mult: 0.5, shop_buy_share: 0.7, shop_sells_types: ['weapon', 'armor', 'tool', 'accessory'],
     capacity: { food: 40, part: 60, material: 40, carcass: 12, weapon: 3, armor: 3, tool: 4, accessory: 2, essence: 20 },
-    specialty: { capacity_mult: 3, start_fill: 0.6 }, start_fill: 0.35,
+    specialty: { capacity_mult: 3, start_fill: 0.6, safe_fill: 0.2 }, start_fill: 0.35, safe_fill: 0.1,
     quality_value: { improvised: 0.5, crude: 0.6, common: 1, fine: 1.6, masterwork: 3 },
     craft: { fee_share: 0.5, min_fee: 1 },
+  }],
+  ['town_tick', {
+    interval_hours: 1, reach: 2, villager_pay_share: 0.5, max_fill: 1.2, workforce_share: 0.4,
+    consume_per_100: { food: 0.8, carcass: 0.1, part: 0.5, material: 0.6, weapon: 0.008, armor: 0.016, tool: 0.012, accessory: 0.004 },
+    hunt: { per_worker: 2 }, wood: { per_worker: 3, item: 'oak_log', terrain: 'tree', full_share: 0.15 }, craft: { per_worker: 2 },
+    wages: { hunter: 2, woodcutter: 1, cook: 1, tanner: 1 },
+  }],
+  ['world_clock', { check_seconds: 60, catch_up_hours: 48 }],
+  ['world.rings', {
+    count: 4, creature_total: { 4: [15, 3], 3: [30, 5], 2: [60, 8], 1: [100, 11] }, vice_bonus: 30, boss_total: 250,
+    conversion_per_ring: 0.008, start: { natives: [0.1, 0.8], corrupted: [0.3, 0.5] },
   }],
   ['gear_slots', [
     { slot: 'main_hand', accepts: 'hand', kind: 'wield' },
@@ -73,7 +84,7 @@ export const RAW_CONFIG = new Map<string, unknown>([
   ['ammo_recovery_permille', 500],
   ['luck', { per_point: 1, bad_floor: 0 }],
   ['field.walk', { tiles_per_second: 3, max_path: 200 }],
-  ['field.encounter', { per_step_permille: 100, grace_steps: 6, group_max: 4 }],
+  ['field.encounter', { per_step_permille: 100, grace_steps: 6, group_max: 4, near_town_group_max: 2 }],
   ['tick.birth', { interval_hours: 6, rate: 0.02 }],
   ['tick.conversion', { interval_hours: 10, rate: 0.01 }],
   ['tick.feeding', { interval_hours: 10, rate: 0.05, threshold: 1.2 }],

@@ -1,4 +1,6 @@
 import type pg from 'pg';
+import { ringConfig, type RingConfig } from './world_config.ts';
+import { clockConfig, economyConfig, townTickConfig, type ClockConfig, type EconomyConfig, type TownTickConfig } from './town_config.ts';
 import type { LuckConfig } from '../util/luck.ts';
 
 // Typed view of balance_config. Every number the battle uses comes from here.
@@ -97,21 +99,17 @@ export type BalanceConfig = {
   encounter: EncounterConfig;
   ticks: TickConfig;
   economy: EconomyConfig;
+  townTick: TownTickConfig;
+  clock: ClockConfig;
+  rings: RingConfig;
 };
 
-// Town trade. A town's price for an item follows its stock: price_empty_mult x base when out, base at half its
-// capacity, price_full_mult x base when full. The shop buys at buy_share of its own selling price.
-export type EconomyConfig = {
-  emptyMult: number; fullMult: number; buyShare: number;
-  capacity: Record<string, number>; // item type -> stock capacity in a plain town (types missing here are not traded)
-  specialtyMult: number; // capacity x this for a town's specialty goods
-  startFill: number; specialtyFill: number; // share of capacity a new town starts with
-  qualityValue: Record<string, number>; // price x this per quality
-  craftFeeShare: number; craftMinFee: number; // craftsman fee: share of the value added, at least the minimum
-};
 
 // Encounters roll per tile stepped: per_step_permille at full density (total pop / max pop, capped at 1).
-export type EncounterConfig = { perStepPermille: number; graceSteps: number; groupMax: number };
+export type { ClockConfig, EconomyConfig, RingConfig, TownTickConfig };
+
+// nearTownGroupMax: biggest group in the corridor next to a town (where strays are summoned).
+export type EncounterConfig = { perStepPermille: number; graceSteps: number; groupMax: number; nearTownGroupMax: number };
 // World tick rules on counts. Hours before world_time_scale.
 export type TickConfig = {
   birth: { intervalHours: number; rate: number };
@@ -225,8 +223,12 @@ export function buildBalance(raw: Map<string, unknown>): BalanceConfig {
     ),
     luck: (({ per_point, bad_floor }) => ({ perPoint: per_point, badFloor: bad_floor }))(need<{ per_point: number; bad_floor: number }>('luck')),
     economy: economyConfig(need('economy')),
-    encounter: (({ per_step_permille, grace_steps, group_max }) => ({ perStepPermille: per_step_permille, graceSteps: grace_steps, groupMax: group_max }))(
-      need<{ per_step_permille: number; grace_steps: number; group_max: number }>('field.encounter'),
+    townTick: townTickConfig(need('town_tick')),
+    clock: clockConfig(need('world_clock')),
+    rings: ringConfig(need('world.rings')),
+    encounter: (({ per_step_permille, grace_steps, group_max, near_town_group_max }) => ({
+      perStepPermille: per_step_permille, graceSteps: grace_steps, groupMax: group_max, nearTownGroupMax: near_town_group_max,
+    }))(need<{ per_step_permille: number; grace_steps: number; group_max: number; near_town_group_max: number }>('field.encounter'),
     ),
     ticks: {
       birth: (({ interval_hours, rate }) => ({ intervalHours: interval_hours, rate }))(need<{ interval_hours: number; rate: number }>('tick.birth')),
@@ -243,18 +245,4 @@ export async function loadBalance(pool: pg.Pool): Promise<BalanceConfig> {
     'SELECT config_key, value FROM config.balance_config',
   );
   return buildBalance(new Map(res.rows.map((r) => [r.config_key, r.value])));
-}
-
-type RawEconomy = {
-  price_empty_mult: number; price_full_mult: number; shop_buy_share: number; capacity: Record<string, number>;
-  specialty: { capacity_mult: number; start_fill: number }; start_fill: number; quality_value: Record<string, number>;
-  craft: { fee_share: number; min_fee: number };
-};
-
-function economyConfig(e: RawEconomy): EconomyConfig {
-  return {
-    emptyMult: e.price_empty_mult, fullMult: e.price_full_mult, buyShare: e.shop_buy_share, capacity: e.capacity,
-    specialtyMult: e.specialty.capacity_mult, startFill: e.start_fill, specialtyFill: e.specialty.start_fill,
-    qualityValue: e.quality_value, craftFeeShare: e.craft.fee_share, craftMinFee: e.craft.min_fee,
-  };
 }

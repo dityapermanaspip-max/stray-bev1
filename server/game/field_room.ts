@@ -6,6 +6,7 @@ import { isSafe } from '../field/town.ts';
 import { tileAt, type FieldGrid, type FieldKind } from '../field/types.ts';
 import { advance, newWalker, walkSpeed, type Walker } from '../field/walker.ts';
 import { openService, useService } from '../town/doors.ts';
+import { isFighting, startFighting, stopFighting, withEntity } from '../util/entity_lock.ts';
 import { createRng } from '../util/rng.ts';
 import { rollEncounter, type Foe } from '../world/encounter.ts';
 import type { PopRow } from '../world/population.ts';
@@ -15,7 +16,7 @@ import type { GearRequest, LoadoutRequest, ServiceRequest } from '../../shared/t
 import type { BattleOrder } from './battle_setup.ts';
 import { FieldPlayer, FieldState } from './field_state.ts';
 import { changeGear, changeLoadout, statusPanel } from './status_service.ts';
-import { fieldView, gridFor, placePlayer, populationFor, walkerStats, type GameWorld } from './world.ts';
+import { fieldView, gridFor, groupCapFor, placePlayer, populationFor, walkerStats, type GameWorld } from './world.ts';
 
 // One room per field (hex or corridor). Shared and cheap: walking only. Encounters hand the player to a
 // private battle room and they leave this one; they come back to the same tile when it is over.
@@ -57,9 +58,11 @@ export class FieldRoom extends Room<{ state: FieldState; client: FieldClient }> 
     return { world: FieldRoom.world, rng: this.rng, ref: this.ref };
   }
 
-  private seated<T>(client: FieldClient, work: (seat: Seat) => Promise<T> | T | null): Promise<T | null> | T | null {
+  // One action at a time per player, and none while they fight (in another tab): see util/entity_lock.ts.
+  private seated<T>(client: FieldClient, work: (seat: Seat) => Promise<T> | T | null): Promise<T | null> | null {
     const seat = client.userData;
-    return seat && !seat.leaving ? work(seat) : null;
+    if (!seat || seat.leaving || isFighting(seat.entityId)) return null;
+    return withEntity(seat.entityId, () => (isFighting(seat.entityId) ? null : work(seat)));
   }
 
   // Swaps happen inside a town's safe square only (the testing flag lifts that).
@@ -138,7 +141,7 @@ export class FieldRoom extends Room<{ state: FieldState; client: FieldClient }> 
 
   private walk(client: FieldClient, msg: WalkRequest) {
     const seat = client.userData;
-    if (!seat || seat.leaving) return;
+    if (!seat || seat.leaving || isFighting(seat.entityId)) return;
     const x = Math.floor(Number(msg?.x));
     const y = Math.floor(Number(msg?.y));
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
@@ -175,9 +178,10 @@ export class FieldRoom extends Room<{ state: FieldState; client: FieldClient }> 
   // True when creatures jump out: the walk stops there.
   private stepped(client: FieldClient, seat: Seat): boolean {
     if (isSafe(this.grid, seat.walker)) return false; // a town's square never rolls
+    if (isFighting(seat.entityId)) return false; // already in a battle (another tab)
     if (seat.grace > 0) return void seat.grace--, false;
     const { cfg } = FieldRoom.world.data;
-    const foes = rollEncounter(cfg.encounter, cfg.luck, this.population, seat.luck, this.rng);
+    const foes = rollEncounter(cfg.encounter, cfg.luck, this.population, seat.luck, this.rng, groupCapFor(FieldRoom.world, this.ref));
     if (!foes) return false;
     seat.walker.path = [];
     seat.grace = cfg.encounter.graceSteps;
@@ -193,6 +197,7 @@ export class FieldRoom extends Room<{ state: FieldState; client: FieldClient }> 
   private async startBattle(client: FieldClient, seat: Seat, foes: Foe[]) {
     const line = FieldRoom.world.data.lines.pick(this.rng, 'field.encounter', 0, 'self');
     const notice: EncounterNotice = { key: 'field.encounter', text: line?.text ?? null, seat: null };
+    startFighting(seat.entityId); // the battle room clears it once its result is saved
     try {
       const order: BattleOrder = {
         entityId: seat.entityId, name: seat.name, fieldRef: this.ref, x: seat.walker.x, y: seat.walker.y, foes,
@@ -202,6 +207,7 @@ export class FieldRoom extends Room<{ state: FieldState; client: FieldClient }> 
       notice.seat = await matchMaker.reserveSeatFor(room, {}, { entityId: seat.entityId });
     } catch (err) {
       console.error(`battle setup failed: ${(err as Error).message}`);
+      stopFighting(seat.entityId);
       seat.leaving = false;
     }
     client.send('encounter', notice);

@@ -6,41 +6,50 @@ import type { ItemCatalog } from '../inventory/items.ts';
 import { inTransaction } from './entity_save.ts';
 import { writeInventory } from './item_repo.ts';
 
-// Town purses, stock counts and craft recipes (world.town_economy, world.town_stock, item.crafts).
+// Town purses, stock counts and craftsman levels (world.town_economy, world.town_stock), and recipes (item.recipes).
 
 export type StockRow = { item: string; quality: string; qty: number };
-export type Town = { ref: string; purse: number; maxBuy: number; specialties: string[]; stock: Map<string, StockRow> };
-export type Craft = { name: string; craftsman: string; output: string; outputQty: number; inputs: { item: string; qty: number }[] };
+export type Town = {
+  ref: string; purse: number; maxBuy: number; specialties: string[];
+  facilities: Record<string, number>; // craftsman service -> level (missing = 1)
+  stock: Map<string, StockRow>;
+};
+export type ItemQty = { item: string; qty: number };
+export type Recipe = { name: string; facility: string; level: number; inputs: ItemQty[]; outputs: ItemQty[] };
 
-// One town's economy, or null when the field is not a trading town. A town with no stock yet is filled
-// from config (start fill per item, more for its specialties) and written back.
+export const facilityLevel = (town: Town | null, facility: string) => town?.facilities[facility] ?? 1;
+
+// One town's economy, or null when the field is not a trading town. Any tradeable item the town has no row for
+// (a new town, or an item added since) is filled from config (start fill, more for its specialties) and written.
 export async function loadTown(pool: pg.Pool, cfg: EconomyConfig, catalog: ItemCatalog, ref: string): Promise<Town | null> {
-  const eco = await pool.query<{ purse: number; max_buy: number; specialties: string[] }>(
-    'SELECT purse, max_buy, specialties FROM world.town_economy WHERE town_ref = $1', [ref],
+  const eco = await pool.query<{ purse: number; max_buy: number; specialties: string[]; facilities: Record<string, number> }>(
+    'SELECT purse, max_buy, specialties, facilities FROM world.town_economy WHERE town_ref = $1', [ref],
   );
   const row = eco.rows[0];
   if (!row) return null;
-  const town: Town = { ref, purse: row.purse, maxBuy: row.max_buy, specialties: row.specialties, stock: new Map() };
+  const town: Town = { ref, purse: row.purse, maxBuy: row.max_buy, specialties: row.specialties, facilities: row.facilities, stock: new Map() };
   const stock = await pool.query<{ item_name: string; quality: string; qty: number }>(
     `SELECT i.item_name, s.quality, s.qty FROM world.town_stock s JOIN item.items i ON i.id = s.item_id WHERE s.town_ref = $1`, [ref],
   );
   for (const s of stock.rows) town.stock.set(stackKey(s.item_name, s.quality), { item: s.item_name, quality: s.quality, qty: s.qty });
-  if (town.stock.size > 0) return town;
+  const known = new Set(stock.rows.map((s) => s.item_name));
+  const fill: StockRow[] = [];
   for (const def of catalog.values()) {
-    if (!tradeable(cfg, def)) continue;
-    const qty = startQty(cfg, def, town.specialties);
-    town.stock.set(stackKey(def.name, def.defaultQuality), { item: def.name, quality: def.defaultQuality, qty });
+    if (known.has(def.name) || !tradeable(cfg, def)) continue;
+    const r = { item: def.name, quality: def.defaultQuality, qty: startQty(cfg, def, town.specialties) };
+    town.stock.set(stackKey(r.item, r.quality), r);
+    fill.push(r);
   }
-  await inTransaction(pool, (client) => writeStock(client, ref, [...town.stock.values()]));
+  if (fill.length > 0) await inTransaction(pool, (client) => fillStock(client, ref, fill));
   return town;
 }
 
-async function writeStock(client: pg.PoolClient, ref: string, rows: StockRow[]): Promise<void> {
+async function fillStock(client: pg.PoolClient, ref: string, rows: StockRow[]): Promise<void> {
   await client.query(
     `INSERT INTO world.town_stock (town_ref, item_id, quality, qty)
      SELECT $1, i.id, x.quality, x.qty FROM unnest($2::text[], $3::text[], $4::int[]) AS x(item, quality, qty)
      JOIN item.items i ON i.item_name = x.item
-     ON CONFLICT (town_ref, item_id, quality) DO UPDATE SET qty = EXCLUDED.qty`,
+     ON CONFLICT (town_ref, item_id, quality) DO NOTHING`,
     [ref, rows.map((r) => r.item), rows.map((r) => r.quality), rows.map((r) => Math.max(0, r.qty))],
   );
 }
@@ -68,13 +77,14 @@ export async function saveTrade(pool: pg.Pool, entityId: string, inv: Inventory,
   });
 }
 
-export async function loadCrafts(pool: pg.Pool): Promise<Craft[]> {
-  const res = await pool.query<{ craft_name: string; craftsman: string; item_name: string; output_qty: number; inputs: { item: string; qty: number }[] }>(
-    `SELECT c.craft_name, c.craftsman, i.item_name, c.output_qty, c.inputs
-     FROM item.crafts c JOIN item.items i ON i.id = c.output_item_id ORDER BY c.craftsman, c.craft_name`,
+const itemQtys = (xs: unknown): ItemQty[] =>
+  Array.isArray(xs) ? xs.map((x: { item?: unknown; qty?: unknown }) => ({ item: String(x?.item ?? ''), qty: Number(x?.qty) })) : [];
+
+export async function loadRecipes(pool: pg.Pool): Promise<Recipe[]> {
+  const res = await pool.query<{ recipe_name: string; facility_type: string; min_facility_level: number; inputs: unknown; outputs: unknown }>(
+    'SELECT recipe_name, facility_type, min_facility_level, inputs, outputs FROM item.recipes ORDER BY facility_type, recipe_name',
   );
   return res.rows.map((r) => ({
-    name: r.craft_name, craftsman: r.craftsman, output: r.item_name, outputQty: r.output_qty,
-    inputs: r.inputs.map((x) => ({ item: String(x.item), qty: Number(x.qty) })),
+    name: r.recipe_name, facility: r.facility_type, level: r.min_facility_level, inputs: itemQtys(r.inputs), outputs: itemQtys(r.outputs),
   }));
 }

@@ -6,7 +6,7 @@ import { devRoundId, fieldSpec, loadFieldData, loadLinks, type FieldData } from 
 import { loadInventory, loadItemCatalog } from '../data/item_repo.ts';
 import { loadPopulation } from '../data/population_repo.ts';
 import { loadPosition, savePosition, type Position } from '../data/position_repo.ts';
-import { loadCrafts, type Craft } from '../data/economy_repo.ts';
+import { loadRecipes, type Recipe } from '../data/economy_repo.ts';
 import { loadBattleData, loadSpecies, type SpeciesDef } from '../data/species_repo.ts';
 import { generateField } from '../field/generate.ts';
 import type { WorldLinks } from '../field/links.ts';
@@ -27,7 +27,8 @@ export type GameWorld = {
   data: BattleData;
   catalog: ItemCatalog;
   species: Map<string, SpeciesDef>;
-  crafts: Craft[];
+  recipes: Recipe[]; // town craftsman recipes (item.recipes)
+  crafted: Set<string>; // finished craftsman goods (the shop shelf sells these)
   fields: FieldData;
   links: WorldLinks;
   roundId: string;
@@ -37,10 +38,13 @@ export type GameWorld = {
 export async function loadGameWorld(pool: pg.Pool): Promise<GameWorld> {
   const roundId = await devRoundId(pool);
   if (!roundId) throw new Error('no dev round: run npm run db:seed');
-  const [data, catalog, species, crafts, fields, links] = await Promise.all([
-    loadBattleData(pool), loadItemCatalog(pool), loadSpecies(pool), loadCrafts(pool), loadFieldData(pool), loadLinks(pool, roundId),
+  const [data, catalog, species, recipes, fields, links] = await Promise.all([
+    loadBattleData(pool), loadItemCatalog(pool), loadSpecies(pool), loadRecipes(pool), loadFieldData(pool), loadLinks(pool, roundId),
   ]);
-  return { pool, data, catalog, species, crafts, fields, links, roundId, grids: new Map() };
+  // Finished craftsman goods: made by a recipe and not the input of another (raw hide and tanned leather are not).
+  const inputs = new Set(recipes.flatMap((r) => r.inputs.map((x) => x.item)));
+  const crafted = new Set(recipes.flatMap((r) => r.outputs.map((x) => x.item)).filter((item) => !inputs.has(item)));
+  return { pool, data, catalog, species, recipes, crafted, fields, links, roundId, grids: new Map() };
 }
 
 export async function gridFor(world: GameWorld, ref: string): Promise<{ grid: FieldGrid; kind: FieldKind } | null> {
@@ -112,6 +116,15 @@ export async function populationFor(world: GameWorld, ref: string): Promise<PopR
   const pops = await loadPopulation(world.pool, [border.a.id, border.b.id]);
   const shareB = (border.corridors.indexOf(ref) + 0.5) / border.corridors.length;
   return blendRows(pops.get(border.a.id)!, pops.get(border.b.id)!, shareB);
+}
+
+// The biggest group a field sends: capped in the corridor next to a town (the first one out of it), where strays
+// are summoned; everywhere else the density rule alone.
+export function groupCapFor(world: GameWorld, ref: string): number {
+  const { encounter } = world.data.cfg;
+  const nearTown = world.links.borders.some((b) =>
+    (b.a.town && b.corridors[0] === ref) || (b.b.town && b.corridors[b.corridors.length - 1] === ref));
+  return nearTown ? encounter.nearTownGroupMax : encounter.groupMax;
 }
 
 // Where a field's creatures are counted: a hex itself, or for a corridor the hex it lies nearer to.

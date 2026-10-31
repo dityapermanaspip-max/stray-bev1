@@ -14,8 +14,9 @@ export function birth(cfg: TickConfig, r: PopRow): void {
   r.natives = Math.min(r.max, r.natives + Math.floor(r.natives * cfg.birth.rate));
 }
 
-export function conversion(cfg: TickConfig, r: PopRow): void {
-  const turned = Math.min(Math.floor(r.natives * cfg.conversion.rate), aboveFloor(r));
+// rate: the hex's ring rate (config/world_config.ts conversionRate); the outer-ring rate when left out.
+export function conversion(cfg: TickConfig, r: PopRow, rate = cfg.conversion.rate): void {
+  const turned = Math.min(Math.floor(r.natives * rate), aboveFloor(r));
   r.natives -= turned;
   r.corrupted += turned;
 }

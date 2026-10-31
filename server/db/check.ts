@@ -1,7 +1,8 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type pg from 'pg';
-import { loadCrafts } from '../data/economy_repo.ts';
+import { findRingProblems, ringConfig } from '../config/world_config.ts';
+import { loadRecipes } from '../data/economy_repo.ts';
 import { loadFieldData } from '../data/field_repo.ts';
 import { loadItemCatalog } from '../data/item_repo.ts';
 import { findFieldProblems } from '../field/parse.ts';
@@ -76,7 +77,10 @@ export async function runStartupCheck(pool: pg.Pool): Promise<string[]> {
   const coins = Object.keys((config.get('coin_values') as Record<string, number> | undefined) ?? {});
   const moveNames = new Set(moves.rows.map((m) => m.move_name));
   const fields = await loadFieldData(pool);
-  const species = await pool.query<{ species_name: string }>('SELECT species_name FROM entity.species');
+  const species = await pool.query<{ species_name: string; base_stats: Record<string, number>; ring_min: number; ring_max: number }>(
+    'SELECT species_name, base_stats, ring_min, ring_max FROM entity.species',
+  );
+  const rings = config.get('world.rings');
   const fieldRefs = await pool.query<{ what: string; template: string; biome: string | null }>(
     `SELECT format('hex %s,%s', q, r) AS what, field_template AS template, biome FROM world.hexes
      UNION ALL SELECT format('corridor %s', id), template, NULL FROM world.corridors`,
@@ -102,7 +106,12 @@ export async function runStartupCheck(pool: pg.Pool): Promise<string[]> {
       : ['balance_config carcass_rot or butchery is missing']),
     ...findFieldProblems([...fields.templates.values()], [...fields.biomes.values()]),
     ...findTownLineProblems([...fields.templates.values()].flatMap((t) => t.town?.buildings.map((b) => b.service) ?? []), lineKeys),
-    ...findCraftProblems(await loadCrafts(pool), new Set(catalog.keys()), lineKeys),
+    ...findCraftProblems(await loadRecipes(pool), new Set(catalog.keys()), lineKeys),
+    ...(rings
+      ? findRingProblems(ringConfig(rings as Parameters<typeof ringConfig>[0]), species.rows.map((s) => ({
+        name: s.species_name, total: Object.values(s.base_stats).reduce((n, v) => n + v, 0), ringMin: s.ring_min, ringMax: s.ring_max,
+      })))
+      : ['balance_config world.rings is missing']),
     ...findBattleProblems(species.rows.map((r) => r.species_name), bodyTiers as Record<string, number[]>, lineKeys, tierKeys),
     ...fieldRefs.rows.flatMap((f) => [
       ...(fields.templates.has(f.template) ? [] : [`${f.what}: unknown field template ${f.template}`]),

@@ -3,7 +3,7 @@
 
 // Server -> client 'service' when the player stops on a door (and again after each action there).
 export type ServiceView = {
-  service: string; // inn | shop | cook | woodworker | temple | guild | trainer
+  service: string; // inn | shop | cook | woodworker | tanner | temple | guild | trainer
   name: string;
   text: string | null; // what the player hears at the door (closed doors, refusals, results)
   inn: { price: number } | null; // copper
@@ -11,7 +11,9 @@ export type ServiceView = {
     offers: { ref: string; name: string; qty: number; price: number }[]; // what the shop pays for one, in copper
     wares: { key: string; name: string; qty: number; price: number }[]; // the shelf: count and price for one
   } | null;
-  craft: { recipes: { name: string; output: string; qty: number; inputs: { name: string; qty: number; have: number }[]; fee: number }[] } | null;
+  craft: {
+    recipes: { name: string; outputs: { name: string; qty: number }[]; inputs: { name: string; qty: number; have: number }[]; fee: number }[];
+  } | null; // what this craftsman makes here; fee in copper
   purse: number; // copper carried
 };
 

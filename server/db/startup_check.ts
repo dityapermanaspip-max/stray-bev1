@@ -40,6 +40,8 @@ export const TOWN_LINE_KEYS = [
   'town.inn.rested', 'town.inn.no_money', 'town.closed', 'town.shop.nothing', 'loadout.not_here',
   'town.shop.sold', 'town.shop.bought', 'town.shop.no_money', 'town.shop.too_dear', 'town.shop.cannot_pay', 'town.shop.out',
   'town.craft.done', 'town.craft.missing', 'town.craft.cannot_pay',
+  // status window refusals (game/status_service.ts)
+  'loadout.in_battle', 'loadout.bad_slot', 'loadout.unknown_move', 'loadout.not_slottable', 'gear.not_held', 'gear.not_wearable', 'gear.bad_slot',
 ];
 const NAME_PREFIXES = [NAME_PREFIX, ITEM_NAME_PREFIX, SPECIES_NAME_PREFIX, BODY_WORD_PREFIX, SERVICE_NAME_PREFIX];
 const isNameKey = (key: string) => NAME_PREFIXES.some((p) => key.startsWith(p));
@@ -209,15 +211,21 @@ export function findTownLineProblems(services: string[], lineKeys: Set<string>):
   ];
 }
 
-// Craft recipes: known items with names, positive counts, and a named craftsman.
+// Recipes: known items with names on both sides, positive counts, a level of 1 or more, and a named craftsman.
+type ItemQty = { item: string; qty: number };
 export function findCraftProblems(
-  crafts: { name: string; craftsman: string; output: string; inputs: { item: string; qty: number }[] }[], items: Set<string>, lineKeys: Set<string>,
+  recipes: { name: string; facility: string; level: number; inputs: ItemQty[]; outputs: ItemQty[] }[], items: Set<string>, lineKeys: Set<string>,
 ): string[] {
-  return crafts.flatMap((c) => [
-    ...(lineKeys.has(SERVICE_NAME_PREFIX + c.craftsman) ? [] : [`craft ${c.name}: craftsman ${c.craftsman} has no ${SERVICE_NAME_PREFIX} line`]),
-    ...(lineKeys.has(ITEM_NAME_PREFIX + c.output) ? [] : [`craft ${c.name}: output ${c.output} has no name`]),
-    ...(c.inputs.length === 0 ? [`craft ${c.name}: no inputs`] : []),
-    ...c.inputs.filter((x) => !items.has(x.item)).map((x) => `craft ${c.name}: unknown input ${x.item}`),
-    ...c.inputs.filter((x) => !Number.isInteger(x.qty) || x.qty < 1).map((x) => `craft ${c.name}: bad qty for ${x.item}`),
+  const side = (name: string, what: string, xs: ItemQty[]) => [
+    ...(xs.length === 0 ? [`recipe ${name}: no ${what}`] : []),
+    ...xs.filter((x) => !items.has(x.item)).map((x) => `recipe ${name}: unknown ${what} item ${x.item}`),
+    ...xs.filter((x) => items.has(x.item) && !lineKeys.has(ITEM_NAME_PREFIX + x.item)).map((x) => `recipe ${name}: ${x.item} has no name`),
+    ...xs.filter((x) => !Number.isInteger(x.qty) || x.qty < 1).map((x) => `recipe ${name}: bad qty for ${x.item}`),
+  ];
+  return recipes.flatMap((r) => [
+    ...(lineKeys.has(SERVICE_NAME_PREFIX + r.facility) ? [] : [`recipe ${r.name}: craftsman ${r.facility} has no ${SERVICE_NAME_PREFIX} line`]),
+    ...(Number.isInteger(r.level) && r.level >= 1 ? [] : [`recipe ${r.name}: level must be 1 or more`]),
+    ...side(r.name, 'input', r.inputs),
+    ...side(r.name, 'output', r.outputs),
   ]);
 }

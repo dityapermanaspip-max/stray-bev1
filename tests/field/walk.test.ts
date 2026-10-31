@@ -15,7 +15,7 @@ function grid(): FieldGrid {
   for (let y = 0; y < 3; y++) {
     for (let x = 0; x < 5; x++) tiles.push({ terrain: 'grass', biome: 'meadow', height: 0, walkable: !(x === 2 && y < 2), slope: null });
   }
-  return { width: 5, height: 3, tiles, spawn: { x: 0, y: 0 }, exits: [] };
+  return { width: 5, height: 3, tiles, spawn: { x: 0, y: 0 }, exits: [], nodes: [] };
 }
 
 test('paths go around walls, refuse blocked or unreachable targets, and respect the step cap', () => {

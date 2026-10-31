@@ -1,6 +1,6 @@
 import { parseItem, parseMaterial, type ItemCatalog } from '../../server/inventory/items.ts';
 
-// Test copy of a few seeded materials and items (db/seeds/15_items).
+// Test copy of a few seeded materials and items (db/seeds/03_items/01_items).
 const leather = parseMaterial('leather', ['leather'], { set_defense: 3, set_weight: 8, durability: 60 });
 const iron = parseMaterial('iron', ['metal'], { set_defense: 7, set_weight: 30, durability: 120 });
 const stone = parseMaterial('stone', ['stone'], {});

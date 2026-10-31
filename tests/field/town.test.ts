@@ -6,7 +6,7 @@ import { reachable } from '../../server/field/reach.ts';
 import { townPlan } from '../../server/field/town.ts';
 import type { FieldSpec } from '../../server/field/types.ts';
 
-// Test copy of seeds/23_town.
+// Test copy of seeds/05_town/01_town.
 const TOWN = {
   safe: 16, height: 0, ground: 'paving', road: 'road', building: 'building', door: 'door',
   buildings: [

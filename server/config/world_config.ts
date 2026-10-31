@@ -53,3 +53,11 @@ export function findRingProblems(rings: RingConfig, species: { name: string; tot
   }
   return out;
 }
+
+// Vices (config `vice`): one type per core stat; main_weight: the type's stat against 1 for each other stat;
+// find_permille: chance an encounter in a vice's hex is the vice itself (finding one is hard: rumors, slim odds).
+export type ViceConfig = { types: ('str' | 'dex' | 'int' | 'end' | 'luck' | 'charm')[]; mainWeight: number; findPermille: number };
+
+export function viceConfig(raw: { types: ViceConfig['types']; main_weight: number; find_permille: number }): ViceConfig {
+  return { types: raw.types, mainWeight: raw.main_weight, findPermille: raw.find_permille };
+}

@@ -1,5 +1,9 @@
 import type pg from 'pg';
-import { ringConfig, type RingConfig } from './world_config.ts';
+import { foodConfig, gatherConfig, type FoodConfig, type GatherConfig } from './gather_config.ts';
+import { growthConfig, type GrowthConfig } from './growth_config.ts';
+import { standingConfig, type StandingConfig } from './standing_config.ts';
+import { worldGenConfig, type WorldGenConfig } from './worldgen_config.ts';
+import { ringConfig, viceConfig, type RingConfig, type ViceConfig } from './world_config.ts';
 import { clockConfig, economyConfig, townTickConfig, type ClockConfig, type EconomyConfig, type TownTickConfig } from './town_config.ts';
 import type { LuckConfig } from '../util/luck.ts';
 
@@ -102,6 +106,12 @@ export type BalanceConfig = {
   townTick: TownTickConfig;
   clock: ClockConfig;
   rings: RingConfig;
+  vice: ViceConfig;
+  statGrowth: GrowthConfig; // stat exp by move tier, hidden race move exp rules
+  standing: StandingConfig; // hidden favor, fame and haggling rules
+  worldGen: WorldGenConfig; // how a new round's map is made
+  gather: GatherConfig; // resource nodes (hidden numbers)
+  food: FoodConfig;
 };
 
 
@@ -226,6 +236,12 @@ export function buildBalance(raw: Map<string, unknown>): BalanceConfig {
     townTick: townTickConfig(need('town_tick')),
     clock: clockConfig(need('world_clock')),
     rings: ringConfig(need('world.rings')),
+    vice: viceConfig(need('vice')),
+    statGrowth: growthConfig(need('growth.tiers'), need('growth.race_exp')),
+    standing: standingConfig(need('standing')),
+    worldGen: worldGenConfig(need('world.gen')),
+    gather: gatherConfig(need('gather')),
+    food: foodConfig(need('food')),
     encounter: (({ per_step_permille, grace_steps, group_max, near_town_group_max }) => ({
       perStepPermille: per_step_permille, graceSteps: grace_steps, groupMax: group_max, nearTownGroupMax: near_town_group_max,
     }))(need<{ per_step_permille: number; grace_steps: number; group_max: number; near_town_group_max: number }>('field.encounter'),

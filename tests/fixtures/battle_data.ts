@@ -4,11 +4,11 @@ import type { BattleData, MoveDef } from '../../server/battle/types.ts';
 import { LinePicker } from '../../server/presentation/line_picker.ts';
 import type { CoreStats } from '../../server/stats/derived.ts';
 
-// Test copy of the seeded config (db/seeds/01, 08, 09). Tests check hand math against it.
+// Test copy of the seeded config (db/seeds/01_core: 01, 08, 09). Tests check hand math against it.
 export const RAW_CONFIG = new Map<string, unknown>([
-  ['move_level_cap', 20],
+  ['move_level_cap', 25],
   ['usage_exp', { hit: 5, miss: 2, critical: 8, kill: 12 }],
-  ['curve.move_exp_required', { a: 20, b: 9, c: 2 }],
+  ['curve.move_exp_required', { a: 30, b: 16, c: 0 }],
   ['curve.stat_exp_reward_base', { a: 15, b: 0 }],
   ['curve.stat_exp_required', { a: 47, b: 17 }],
   ['move_exp_enemy_scaling', { enabled: true, full_at: 0.4, min_mult: 0.1 }],
@@ -39,7 +39,7 @@ export const RAW_CONFIG = new Map<string, unknown>([
   ['growth.guard.recovery_per_level', -0.01],
   ['growth.guard.cost_per_level', -0.01],
   ['body_tiers', { hp: [0, 0.15, 0.4, 0.65, 0.9], stamina: [0, 0.15, 0.4, 0.65, 0.9], mana: [0, 0.15, 0.4, 0.65, 0.9] }],
-  ['move_level_words', { tiers: [1, 5, 10, 20] }],
+  ['move_level_words', { tiers: [1, 7, 13, 25] }],
   ['summoner_exp_bonus', 0.2],
   ['ai.heal_below_tier', 2],
   ['player_start_stats', { str: 5, dex: 5, int: 5, end: 5, luck: 5, charm: 5 }],
@@ -62,6 +62,34 @@ export const RAW_CONFIG = new Map<string, unknown>([
     wages: { hunter: 2, woodcutter: 1, cook: 1, tanner: 1 },
   }],
   ['world_clock', { check_seconds: 60, catch_up_hours: 48 }],
+  ['growth.tiers', { band_levels: 6, tiers: { 1: [3, 1], 2: [5, 2], 3: [7, 3] } }],
+  ['growth.race_exp', { human: [{ max_level: 6, mult: 1.15 }] }],
+  ['vice', { types: ['str', 'dex', 'int', 'end', 'luck', 'charm'], main_weight: 2, find_permille: 20 }],
+  ['world.gen', {
+    corridors: [3, 7], towns: { 4: 6, 3: 4, 2: 3, 1: 2 }, town_spacing: 2, centre_biome: 'volcano',
+    biomes: { 4: { seashore: 3, meadow: 3, grove: 2, desert: 1 }, 3: { meadow: 2, grove: 2, desert: 2, snow: 2, battlefield: 1 },
+      2: { battlefield: 3, snow: 2, desert: 2, volcano: 1 }, 1: { battlefield: 2, volcano: 3, snow: 1 } },
+    clump: 1.5, hex_max: 10000, safe_share: 0.08,
+    town: { purse_per_person: 10, max_buy: { 4: 100, 3: 200, 2: 400, 1: 800 }, population: { 4: 300, 3: 600, 2: 1200, 1: 2400 },
+      specialties: { meadow: ['chicken', 'lizard'] }, jobs: { farmer: 0.5, hunter: 0.5 } },
+    vice_rings: [1, 2],
+  }],
+  ['gather', {
+    chance_base: 0.8, chance_per_level: 0.02, guard_permille: 500,
+    kinds: {
+      rock: { move: 'mining', tools: ['pick', 'hammer'], bonus_tools: ['pick'], bonus_mult: 1.3, uses: 6, refill_per_hour: 1, exp: 8, near: [] },
+      fish: { move: 'fishing', tools: ['rod'], bonus_tools: [], bonus_mult: 1, uses: 5, refill_per_hour: 1, exp: 8, near: ['water'] },
+    },
+  }],
+  ['food', { duration_minutes: 30 }],
+  ['standing', {
+    favor_tiers: [10, 30, 60], charm_favor: 1, charm_fame: 1,
+    options: { haggle: { favor_tier: 1, fame: 0 } },
+    haggle: { base_permille: 300, charm_permille: 20, min_permille: 50, max_permille: 900, margin: 0.1, fail_favor: 3 },
+    generous: { margin: 0.2, favor: 2, cap_tier: 2 },
+    pushover: { hours: 72, price_margin: 0.1, haggle_permille: 200 },
+    fame: { radius: 2, falloff: 0.5, vice_kill: 20 },
+  }],
   ['world.rings', {
     count: 4, creature_total: { 4: [15, 3], 3: [30, 5], 2: [60, 8], 1: [100, 11] }, vice_bonus: 30, boss_total: 250,
     conversion_per_ring: 0.008, start: { natives: [0.1, 0.8], corrupted: [0.3, 0.5] },
@@ -119,6 +147,7 @@ export function move(partial: Partial<MoveDef> & Pick<MoveDef, 'name' | 'effects
     cooldown: null,
     channel: false,
     expScaling: 1,
+    tier: 1,
     overrides: { damage: null, recovery: null, cost: null },
     growthTag: 'quick',
     tags: ['growth.quick', 'melee'],

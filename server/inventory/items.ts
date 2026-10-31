@@ -40,6 +40,8 @@ export type ItemDef = {
   taboo: boolean; // most folk will not eat or trade it (cat meat): no shop takes or stocks it
   edible: boolean | null; // null = not food
   rotsTo: string | null; // what this becomes when its carcass was rotten
+  toolType: string | null; // what a non-weapon tool counts as at a resource node (axe, pick, rod)
+  meal: Record<string, number> | null; // hidden food effect (food config): stamina_cost, mana_cost, standby_regen
   carcassOf: string | null; // species this carcass came from
   wield: Wield | null;
   worn: Worn | null;
@@ -87,6 +89,8 @@ export function parseItem(
     taboo: data.taboo === true,
     edible: typeof data.edible === 'boolean' ? data.edible : null,
     rotsTo: typeof data.rots_to === 'string' ? data.rots_to : null,
+    toolType: typeof data.tool_type === 'string' ? data.tool_type : null,
+    meal: (obj(data.meal) as Record<string, number> | null) ?? null,
     carcassOf: typeof data.carcass_of === 'string' ? data.carcass_of : null,
     wield: w
       ? {

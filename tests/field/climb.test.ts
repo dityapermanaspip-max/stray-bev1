@@ -9,7 +9,7 @@ import type { FieldGrid, Tile } from '../../server/field/types.ts';
 // One row of flat tiles at the given heights.
 function row(heights: number[]): FieldGrid {
   const tiles: Tile[] = heights.map((height) => ({ terrain: 'grass', biome: 'meadow', height, walkable: true, slope: null }));
-  return { width: heights.length, height: 1, tiles, spawn: { x: 0, y: 0 }, exits: [] };
+  return { width: heights.length, height: 1, tiles, spawn: { x: 0, y: 0 }, exits: [], nodes: [] };
 }
 const at = (x: number) => ({ x, y: 0 });
 

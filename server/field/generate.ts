@@ -106,7 +106,7 @@ export function generateField(spec: FieldSpec): FieldGrid {
       });
     }
   }
-  const grid: FieldGrid = { width, height, tiles, spawn, exits };
+  const grid: FieldGrid = { width, height, tiles, spawn, exits, nodes: [] };
   if (template.town) applyTown(grid, template.town);
   const biomes = { [biomeA.name]: biomeA, [biomeB.name]: biomeB };
   naturalSlopes(grid, biomes, createRng(layerSeed(seed, LAYER.slopes)));

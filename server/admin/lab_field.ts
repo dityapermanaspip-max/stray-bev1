@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { devRoundId, fieldSpec, listFields, type FieldData } from '../data/field_repo.ts';
+import { currentRoundId, fieldSpec, listFields, type FieldData } from '../data/field_repo.ts';
 import { generateField } from '../field/generate.ts';
 import type { FieldGrid, FieldSpec } from '../field/types.ts';
 import type { LabFieldRequest } from './lab_types.ts';
@@ -7,7 +7,7 @@ import type { LabFieldRequest } from './lab_types.ts';
 // Field preview in the lab: a stored dev field, or any template + biome blend + seed. Nothing is saved.
 
 export async function fieldCatalog(pool: pg.Pool, fields: FieldData) {
-  const round = await devRoundId(pool);
+  const round = await currentRoundId(pool);
   return {
     templates: [...fields.templates.values()].map((t) => ({ name: t.name, kind: t.kind, width: t.width, height: t.height })),
     biomes: [...fields.biomes.keys()],

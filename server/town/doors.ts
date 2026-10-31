@@ -9,26 +9,33 @@ import type { Rng } from '../util/rng.ts';
 import type { ServiceRequest, ServiceView } from '../../shared/town.ts';
 import type { GameWorld } from '../game/world.ts';
 import { craftOnce, recipeViews, recipesAt } from './craft.ts';
+import { generousEffect, greetTier, haggle, haggleOpen, shopAdjust, shopTalk, type ShopTalk } from '../standing/shop_standing.ts';
 import { buyFromShop, sellToShop, shopOffers, shopWares } from './shop.ts';
 
 // Town doors. Standing on a door opens its service; the client then asks for actions there.
 // Inn: pay copper, wake rested. Shop: buys anything it trades, sells finished goods, against the town's stock.
 // Craftsmen: any service with recipes, making what their level in this town allows.
+// The shopkeeper's standing (favor, the visit's haggle, the pushover mark) moves this player's prices there.
 // Temple, guild and trainer are closed until their steps. The town's stock and purse are read fresh for every
 // view and action (the DB is the truth; two players may trade at once).
 
 export type DoorCtx = { world: GameWorld; rng: Rng; ref: string };
 
-const say = (c: DoorCtx, key: string) => c.world.data.lines.pick(c.rng, key, 0, 'self')?.text ?? null;
+const say = (c: DoorCtx, key: string, tier = 0) => c.world.data.lines.pick(c.rng, key, tier, 'self')?.text ?? null;
 const nameOf = (c: DoorCtx, item: string) => c.world.data.lines.pick(c.rng, ITEM_NAME_PREFIX + item)?.text ?? item;
 const isCraftsman = (c: DoorCtx, service: string) => c.world.recipes.some((r) => r.facility === service);
 const recipesHere = (c: DoorCtx, service: string, town: Town | null) => recipesAt(c.world.recipes, service, facilityLevel(town, service));
 const townOf = (c: DoorCtx) => loadTown(c.world.pool, c.world.data.cfg.economy, c.world.catalog, c.ref);
 
-function shopView(c: DoorCtx, town: Town, inv: Inventory): NonNullable<ServiceView['shop']> {
+function shopView(c: DoorCtx, town: Town, inv: Inventory, talk: ShopTalk): NonNullable<ServiceView['shop']> {
   const { cfg } = c.world.data;
+  const adj = shopAdjust(cfg.standing, talk);
   const named = <T extends { item: string }>(xs: T[]) => xs.map(({ item, ...rest }) => ({ ...rest, name: nameOf(c, item) }));
-  return { offers: named(shopOffers(cfg, c.world.catalog, town, inv, Date.now())), wares: named(shopWares(cfg, c.world.catalog, town, c.world.crafted)) };
+  return {
+    offers: named(shopOffers(cfg, c.world.catalog, town, inv, Date.now(), adj)),
+    wares: named(shopWares(cfg, c.world.catalog, town, c.world.crafted, adj)),
+    haggle: haggleOpen(cfg.standing, talk),
+  };
 }
 
 function craftView(c: DoorCtx, service: string, town: Town | null, inv: Inventory): NonNullable<ServiceView['craft']> {
@@ -42,9 +49,9 @@ function craftView(c: DoorCtx, service: string, town: Town | null, inv: Inventor
   };
 }
 
-function view(c: DoorCtx, service: string, inv: Inventory, town: Town | null, text: string | null): ServiceView {
+function view(c: DoorCtx, service: string, inv: Inventory, town: Town | null, text: string | null, talk: ShopTalk | null = null): ServiceView {
   const { cfg } = c.world.data;
-  const shop = service === 'shop' && town ? shopView(c, town, inv) : null;
+  const shop = service === 'shop' && town && talk ? shopView(c, town, inv, talk) : null;
   const craft = isCraftsman(c, service) ? craftView(c, service, town, inv) : null;
   const open = service === 'inn' || shop !== null || craft !== null;
   return {
@@ -60,7 +67,9 @@ function view(c: DoorCtx, service: string, inv: Inventory, town: Town | null, te
 
 export async function openService(c: DoorCtx, entityId: string, service: string): Promise<ServiceView> {
   const [inv, town] = await Promise.all([loadInventory(c.world.pool, entityId), service === 'shop' || isCraftsman(c, service) ? townOf(c) : null]);
-  return view(c, service, inv, town, null);
+  if (service !== 'shop' || !town) return view(c, service, inv, town, null);
+  const talk = await shopTalk(c.world, entityId, c.ref);
+  return view(c, service, inv, town, say(c, 'town.shop.greet', greetTier(c.world.data.cfg.standing, talk)), talk);
 }
 
 // One action at the door the player stands on. Answers with the refreshed door view.
@@ -73,15 +82,21 @@ export async function useService(c: DoorCtx, entityId: string, service: string, 
     await saveBodyAndBag(pool, entityId, null, inv);
     return view(c, service, inv, null, say(c, 'town.inn.rested'));
   }
-  if (service === 'shop' && (req?.action === 'sell' || req?.action === 'buy')) {
+  if (service === 'shop' && (req?.action === 'sell' || req?.action === 'buy' || req?.action === 'haggle')) {
     const town = await townOf(c);
     if (!town) return view(c, service, inv, null, null);
+    const talk = await shopTalk(c.world, entityId, c.ref);
+    const again = async (line: string | null) => view(c, service, inv, town, line && say(c, line), await shopTalk(c.world, entityId, c.ref));
+    if (req.action === 'haggle') return again(await haggle(c.world, c.rng, entityId, c.ref, talk));
+    const generous = req.generous === true;
+    const adj = shopAdjust(cfg.standing, talk, generous);
     const done = req.action === 'sell'
-      ? sellToShop(cfg, catalog, town, inv, String(req.ref ?? ''), Date.now())
-      : buyFromShop(cfg, catalog, town, inv, String(req.key ?? ''), c.world.crafted);
-    if (typeof done === 'string') return view(c, service, inv, town, say(c, done));
-    await saveTrade(pool, entityId, inv, town.ref, done.deltas, done.purseDelta);
-    return view(c, service, inv, town, say(c, done.line));
+      ? sellToShop(cfg, catalog, town, inv, String(req.ref ?? ''), Date.now(), adj)
+      : buyFromShop(cfg, catalog, town, inv, String(req.key ?? ''), c.world.crafted, adj);
+    if (typeof done === 'string') return view(c, service, inv, town, say(c, done), talk);
+    const effect = generous ? generousEffect(c.world, entityId, talk) : null;
+    await saveTrade(pool, entityId, inv, town.ref, done.deltas, done.purseDelta, effect?.write);
+    return again(effect?.line ?? done.line);
   }
   if (req?.action === 'craft' && isCraftsman(c, service)) {
     const town = await townOf(c);

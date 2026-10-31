@@ -66,9 +66,11 @@ export async function fieldSpec(pool: pg.Pool, data: FieldData, ref: string): Pr
   return { template, biomeA, biomeB, blend, seed: Number(BigInt(row.seed) & 0xffffffffn) };
 }
 
-// The dev round from seeds/18_fields, until world generation exists (Step 4).
-export async function devRoundId(pool: pg.Pool): Promise<string | null> {
-  const res = await pool.query<{ id: string }>("SELECT id FROM world.rounds WHERE status = 'dev' ORDER BY started_at LIMIT 1");
+// The round being played: the newest active one (npm run world:new), else the dev round (seeds/04_world/01_fields).
+export async function currentRoundId(pool: pg.Pool): Promise<string | null> {
+  const res = await pool.query<{ id: string }>(
+    "SELECT id FROM world.rounds WHERE status IN ('active', 'dev') ORDER BY status = 'active' DESC, started_at DESC LIMIT 1",
+  );
   return res.rows[0]?.id ?? null;
 }
 

@@ -4,7 +4,7 @@ import type { CarcassData, LootData } from '../../server/inventory/loot.ts';
 import { move } from './battle_data.ts';
 import { catalog as gearCatalog } from './items.ts';
 
-// Test copy of the chicken loot (db/seeds/16_loot) plus coins and a knife.
+// Test copy of the chicken loot (db/seeds/03_items/02_loot) plus coins and a knife.
 const iron = parseMaterial('iron', ['metal'], { durability: 120 });
 
 export const catalog: ItemCatalog = new Map([

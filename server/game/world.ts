@@ -2,22 +2,26 @@ import type pg from 'pg';
 import type { BattleData } from '../battle/types.ts';
 import { findEntityByName, loadEntityState } from '../data/entity_load.ts';
 import { createPlayer, saveBag } from '../data/entity_save.ts';
-import { devRoundId, fieldSpec, loadFieldData, loadLinks, type FieldData } from '../data/field_repo.ts';
+import { currentRoundId, fieldSpec, loadFieldData, loadLinks, type FieldData } from '../data/field_repo.ts';
 import { loadInventory, loadItemCatalog } from '../data/item_repo.ts';
 import { loadPopulation } from '../data/population_repo.ts';
 import { loadPosition, savePosition, type Position } from '../data/position_repo.ts';
 import { loadRecipes, type Recipe } from '../data/economy_repo.ts';
 import { loadBattleData, loadSpecies, type SpeciesDef } from '../data/species_repo.ts';
 import { generateField } from '../field/generate.ts';
-import type { WorldLinks } from '../field/links.ts';
+import { loadNodeLoot } from '../gather/gather_repo.ts';
+import { placeNodes } from '../field/nodes.ts';
+import type { Hex, WorldLinks } from '../field/links.ts';
 import { tileAt, type FieldGrid, type FieldKind } from '../field/types.ts';
 import { progressStats } from '../growth/level_up.ts';
 import { carriedWeight, loadTier } from '../inventory/bag.ts';
 import { addCoins } from '../inventory/money.ts';
 import type { ItemCatalog } from '../inventory/items.ts';
+import type { LootEntry } from '../inventory/loot.ts';
 import { calcDerived } from '../stats/derived.ts';
 import { blendRows } from '../world/encounter.ts';
 import type { PopRow } from '../world/population.ts';
+import { hexDistance } from '../world/world_hour.ts';
 import type { FieldView } from '../../shared/field.ts';
 
 // What the game server keeps in memory: data loaded once, plus generated fields (a cache; the DB stays the truth).
@@ -33,18 +37,20 @@ export type GameWorld = {
   links: WorldLinks;
   roundId: string;
   grids: Map<string, { grid: FieldGrid; kind: FieldKind }>;
+  nodeLoot: Map<string, LootEntry[]>; // resource node finds by table (node_<kind>_native / _corrupted)
 };
 
 export async function loadGameWorld(pool: pg.Pool): Promise<GameWorld> {
-  const roundId = await devRoundId(pool);
-  if (!roundId) throw new Error('no dev round: run npm run db:seed');
-  const [data, catalog, species, recipes, fields, links] = await Promise.all([
+  const roundId = await currentRoundId(pool);
+  if (!roundId) throw new Error('no round: run npm run db:seed or npm run world:new');
+  const [data, catalog, species, recipes, fields, links, nodeLoot] = await Promise.all([
     loadBattleData(pool), loadItemCatalog(pool), loadSpecies(pool), loadRecipes(pool), loadFieldData(pool), loadLinks(pool, roundId),
+    loadNodeLoot(pool),
   ]);
   // Finished craftsman goods: made by a recipe and not the input of another (raw hide and tanned leather are not).
   const inputs = new Set(recipes.flatMap((r) => r.inputs.map((x) => x.item)));
   const crafted = new Set(recipes.flatMap((r) => r.outputs.map((x) => x.item)).filter((item) => !inputs.has(item)));
-  return { pool, data, catalog, species, recipes, crafted, fields, links, roundId, grids: new Map() };
+  return { pool, data, catalog, species, recipes, crafted, fields, links, roundId, grids: new Map(), nodeLoot };
 }
 
 export async function gridFor(world: GameWorld, ref: string): Promise<{ grid: FieldGrid; kind: FieldKind } | null> {
@@ -52,7 +58,10 @@ export async function gridFor(world: GameWorld, ref: string): Promise<{ grid: Fi
   if (cached) return cached;
   const spec = await fieldSpec(world.pool, world.fields, ref);
   if (!spec) return null;
-  const entry = { grid: generateField(spec), kind: spec.template.kind };
+  const grid = generateField(spec);
+  const near = Object.fromEntries(Object.entries(world.data.cfg.gather.kinds).map(([k, v]) => [k, v.near]));
+  grid.nodes = placeNodes(grid, spec, near).filter((n) => world.data.cfg.gather.kinds[n.kind]); // only kinds in config
+  const entry = { grid, kind: spec.template.kind };
   world.grids.set(ref, entry);
   return entry;
 }
@@ -62,16 +71,31 @@ export function fieldView(ref: string, kind: FieldKind, g: FieldGrid): FieldView
     ref, kind, width: g.width, height: g.height,
     tiles: g.tiles.map((t) => ({ t: t.terrain, b: t.biome, h: t.height, w: t.walkable, s: t.slope ?? -1, safe: !!t.safe, door: t.service ?? null })),
     exits: g.exits.map((e) => ({ id: e.id, x: e.x, y: e.y })),
+    nodes: g.nodes.map((n) => ({ x: n.x, y: n.y, kind: n.kind })),
   };
 }
 
-// Where new players start: a town of the round if there is one, else the hex nearest the centre.
-async function startHex(world: GameWorld): Promise<string> {
-  const res = await world.pool.query<{ id: string }>(
-    `SELECT id::text FROM world.hexes WHERE round_id = $1 ORDER BY (field_kind = 'town') DESC, abs(q) + abs(r), q LIMIT 1`,
-    [world.roundId],
-  );
-  return res.rows[0].id;
+// A field of the round being played (hex or corridor).
+export const inRound = (world: GameWorld, ref: string) => world.links.hexes.has(ref) || world.links.borders.some((b) => b.corridors.includes(ref));
+
+// Where a stray is summoned: the first corridor out of a town on the outermost ring that has towns, at its exit
+// into the town. Which way they walk first is their destiny. Without such a corridor: the hex nearest the centre.
+async function strayStart(world: GameWorld): Promise<Position> {
+  const ring = (h: Hex) => hexDistance({ q: 0, r: 0 }, h);
+  const outer = Math.max(...[...world.links.hexes.values()].filter((h) => h.town).map(ring));
+  const spots = world.links.borders.flatMap((b) => [
+    ...(b.a.town && ring(b.a) === outer && b.corridors.length > 0 ? [{ ref: b.corridors[0], exit: 'a' }] : []),
+    ...(b.b.town && ring(b.b) === outer && b.corridors.length > 0 ? [{ ref: b.corridors[b.corridors.length - 1], exit: 'b' }] : []),
+  ]);
+  const spot = spots[Math.floor(Math.random() * spots.length)];
+  if (spot) {
+    const { grid } = (await gridFor(world, spot.ref))!;
+    const exit = grid.exits.find((e) => e.id === spot.exit) ?? grid.spawn;
+    return { fieldRef: spot.ref, x: exit.x, y: exit.y };
+  }
+  const centre = [...world.links.hexes.values()].sort((a, b) => ring(a) - ring(b))[0];
+  const { grid } = (await gridFor(world, centre.id))!;
+  return { fieldRef: centre.id, x: grid.spawn.x, y: grid.spawn.y };
 }
 
 // A new player: created with the start moves, then given the starting purse.
@@ -89,11 +113,13 @@ export async function placePlayer(world: GameWorld, name: string): Promise<{ ent
   const { pool } = world;
   const entityId = (await findEntityByName(pool, 'player', name)) ?? (await newPlayer(world, name));
   let position = await loadPosition(pool, entityId);
-  const field = position ? await gridFor(world, position.fieldRef) : null;
-  if (!position || !field || !tileAt(field.grid, position.x, position.y)?.walkable) {
-    const ref = field ? position!.fieldRef : await startHex(world);
-    const { grid } = (await gridFor(world, ref))!;
-    position = { fieldRef: ref, x: grid.spawn.x, y: grid.spawn.y };
+  // A field of an ended round (or none): summoned anew as a stray. A bad tile in a real field: its spawn.
+  const field = position && inRound(world, position.fieldRef) ? await gridFor(world, position.fieldRef) : null;
+  if (!position || !field) {
+    position = await strayStart(world);
+    await savePosition(pool, entityId, position);
+  } else if (!tileAt(field.grid, position.x, position.y)?.walkable) {
+    position = { fieldRef: position.fieldRef, x: field.grid.spawn.x, y: field.grid.spawn.y };
     await savePosition(pool, entityId, position);
   }
   return { entityId, position };

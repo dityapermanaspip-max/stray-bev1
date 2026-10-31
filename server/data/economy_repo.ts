@@ -56,7 +56,11 @@ async function fillStock(client: pg.PoolClient, ref: string, rows: StockRow[]): 
 
 // A trade or a craft fee, at once: the player's bag, the town's stock changes (qty as +/- deltas), and its purse.
 // Stock and purse move by deltas and may never go below zero (another player may have emptied a shelf or the till).
-export async function saveTrade(pool: pg.Pool, entityId: string, inv: Inventory, ref: string, deltas: StockRow[], purseDelta: number): Promise<void> {
+// extra: more writes in the same transaction (favor after a generous trade).
+export async function saveTrade(
+  pool: pg.Pool, entityId: string, inv: Inventory, ref: string, deltas: StockRow[], purseDelta: number,
+  extra?: (client: pg.PoolClient) => Promise<void>,
+): Promise<void> {
   await inTransaction(pool, async (client) => {
     await writeInventory(client, entityId, inv);
     for (const d of deltas) {
@@ -74,6 +78,7 @@ export async function saveTrade(pool: pg.Pool, entityId: string, inv: Inventory,
     }
     const res = await client.query('UPDATE world.town_economy SET purse = purse + $2 WHERE town_ref = $1 AND purse + $2 >= 0', [ref, purseDelta]);
     if (res.rowCount !== 1) throw new Error('town_purse');
+    if (extra) await extra(client);
   });
 }
 

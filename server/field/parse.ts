@@ -33,6 +33,7 @@ export function parseBiome(name: string, params: Record<string, unknown>): Biome
     hills: { max: Number(hills.max ?? 0), scale: Number(hills.scale ?? 4), steep: Number(hills.steep ?? 1) },
     lowland: { share: Number(lowland.share ?? 0), terrain: weights(lowland.terrain) },
     slopeShare: Number(params.slope_share ?? 0),
+    nodes: weights(params.nodes),
   };
 }
 

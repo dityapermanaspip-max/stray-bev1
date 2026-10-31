@@ -37,7 +37,7 @@ export function payMoveExp(
   }
   if (core.summonerSides.has(entity.side)) amount *= 1 + cfg.summonerExpBonus;
 
-  const growth = addMoveExp(progress, moveName, amount, { statExp: move.statExp, expScaling: move.expScaling }, cfg);
+  const growth = addMoveExp(progress, moveName, amount, { statExp: move.statExp, expScaling: move.expScaling, tier: move.tier, tags: move.tags }, cfg);
   for (const event of growth) {
     if (event.kind === 'move_level_up') entity.moveLevels.set(event.move, event.level);
     if (event.kind === 'move_word') core.say(entity, 'move_level', event.tier);

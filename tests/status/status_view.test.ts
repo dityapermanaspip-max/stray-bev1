@@ -19,7 +19,7 @@ const lines = new LinePicker([
 ]);
 
 function view(body: { hp: number; stamina: number; mana: number } | null) {
-  const progress = createProgress(stats(), [{ name: 'punch', level: 5 }, { name: 'kick', level: 1 }, { name: 'guard', level: 1 }]);
+  const progress = createProgress(stats(), [{ name: 'punch', level: 7 }, { name: 'kick', level: 1 }, { name: 'guard', level: 1 }]);
   return buildStatusView({
     cfg, lines, rng: createRng(1), speaker: 'generic',
     progress, loadout: starterLoadout(cfg, ['punch', 'kick']), body, unseen: new Set(['guard']),

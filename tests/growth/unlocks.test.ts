@@ -48,7 +48,7 @@ test('a level-up in battle learns the move but does not equip it', () => {
   const p = fighter('p', 'party', { stats: stats({ str: 10, dex: 30, int: 30, luck: 0 }), controller: 'ai' });
   const e = fighter('e', 'enemy', { stats: stats({ str: 1, end: 40, luck: 0 }), controller: 'ai', moves: [] });
   const progress = createProgress(p.stats, [{ name: 'punch', level: 1 }]);
-  progress.moves.get('punch')!.exp = 30; // one hit away from level 2
+  progress.moves.get('punch')!.exp = 45; // one hit away from level 2 (46)
   const inst = new BattleInstance(data, { entities: [p, e], progress: new Map([['p', progress]]), summonerSides: new Set(), seed: 1 });
   const events = Array.from({ length: 30 }, () => inst.tick(100)).flat();
   assert.ok(events.some((x) => x.type === 'learned' && x.move === 'bandage'));

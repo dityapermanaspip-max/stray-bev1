@@ -26,6 +26,7 @@ CREATE TABLE moves.moves (
   atb_recovery numeric NOT NULL DEFAULT 0,
   channel boolean NOT NULL DEFAULT false,
   exp_scaling numeric,
+  cooldown_seconds numeric CHECK (cooldown_seconds IS NULL OR cooldown_seconds >= 0), -- null = no cooldown
   damage_per_level numeric, -- null = growth tag config rate
   recovery_per_level numeric,
   cost_per_level numeric

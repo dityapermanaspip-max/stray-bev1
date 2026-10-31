@@ -37,6 +37,7 @@ export type MoveDef = {
   overrides: { damage: number | null; recovery: number | null; cost: number | null };
   growthTag: string;
   tags: string[];
+  tier: number; // growth tier from the `tier:N` tag (1 when none): how much stat exp its level-ups pay
   effects: EffectDef[];
   requires: RequireDef[];
   statExp: Partial<Record<Stat, number>>;
@@ -134,6 +135,7 @@ export type BattleEntity = {
   tiers: Record<BodyResource, number>;
   immuneShown: Set<string>;
   cooldowns: Map<string, number>; // move -> ms left
+  costMult?: { stamina: number; mana: number }; // hidden: a meal's effect on move costs (food)
 };
 
 export type HitOutcome = 'hit' | 'crit' | 'miss';

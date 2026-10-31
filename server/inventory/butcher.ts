@@ -83,7 +83,7 @@ export function butcherCarcass(job: ButcherJob): ButcherError | ButcherResult {
   let growth: GrowthEvent[] = [];
   if (mode === 'self') {
     const move = job.moves.get(b.move);
-    if (move) growth = addMoveExp(job.cutter!.progress, b.move, b.expPerCarcass, { statExp: move.statExp, expScaling: move.expScaling }, cfg);
+    if (move) growth = addMoveExp(job.cutter!.progress, b.move, b.expPerCarcass, { statExp: move.statExp, expScaling: move.expScaling, tier: move.tier, tags: move.tags }, cfg);
   }
   const lines = [mode === 'self' ? 'butcher.self' : mode === 'npc_pay' ? 'butcher.paid' : 'butcher.cut'];
   if (worthless(catalog, drops)) lines.push('butcher.junk');

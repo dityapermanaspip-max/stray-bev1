@@ -48,7 +48,7 @@ export function runSession(world: SessionWorld, opts: SessionOptions): SessionRe
   if (enemyPool.length === 0) throw new Error('no known enemy species');
   const startStats = opts.start?.stats ?? (cfg.playerStartStats as CoreStats);
   const startMoves = opts.start?.moves ?? cfg.playerStartMoves.map((name) => ({ name, level: 1 }));
-  const progress: Progress = createProgress(startStats, startMoves);
+  const progress: Progress = { ...createProgress(startStats, startMoves), race: 'human' }; // the sim player is human
 
   // The sim player equips each new move into a free slot (swaps allowed anywhere until towns exist).
   const loadout = starterLoadout(cfg, startMoves.map((m) => m.name));

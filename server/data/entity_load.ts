@@ -28,8 +28,8 @@ export async function findEntityByName(pool: pg.Pool, kind: string, name: string
 
 export async function loadEntityState(pool: pg.Pool, entityId: string): Promise<EntityState> {
   const [entity, stats, moves, recipes, slots, body] = await Promise.all([
-    pool.query<{ kind: string; name: string; body_parts: string[] | null }>(
-      `SELECT e.kind, e.name, coalesce(r.body_parts, s.body_parts) AS body_parts
+    pool.query<{ kind: string; name: string; body_parts: string[] | null; race: string | null }>(
+      `SELECT e.kind, e.name, coalesce(r.body_parts, s.body_parts) AS body_parts, r.race_name AS race
        FROM entity.entities e
        LEFT JOIN entity.races r ON r.id = e.race_id
        LEFT JOIN entity.species s ON s.id = e.species_id
@@ -80,6 +80,7 @@ export async function loadEntityState(pool: pg.Pool, entityId: string): Promise<
       ) as Progress['stats'],
       moves: new Map(moves.rows.map((m) => [m.move_name, { level: m.level, exp: Number(m.exp) }])),
       recipes: new Set(recipes.rows.map((r) => r.move_name)),
+      race: row.race ?? undefined,
     },
     loadout: new Map(slots.rows.map((s) => [s.slot, s.move_name])),
     body: b ? { hp: Number(b.hp), stamina: Number(b.stamina), mana: Number(b.mana) } : null,

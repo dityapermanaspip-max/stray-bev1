@@ -28,14 +28,21 @@ export function moveCost(cfg: BalanceConfig, move: MoveDef, level: number): numb
   return Math.max(0, move.cost * levelMult(growthRates(cfg, move).cost, level));
 }
 
+// What this entity pays for a move: a meal's hidden cost multipliers apply (food). Magic's stamina share uses the
+// stamina multiplier.
+export function entityCost(cfg: BalanceConfig, e: BattleEntity, move: MoveDef): { cost: number; staminaShare: number } {
+  const cost = moveCost(cfg, move, e.moveLevels.get(move.name) ?? 1) * (move.resource ? e.costMult?.[move.resource] ?? 1 : 1);
+  return { cost, staminaShare: move.resource === 'mana' ? magicStaminaCost(cfg, cost) * (e.costMult?.stamina ?? 1) : 0 };
+}
+
 export function canUse(cfg: BalanceConfig, e: BattleEntity, move: MoveDef): boolean {
   if (move.category === 'life') return false;
   if (!e.moves.includes(move.name) || !meetsRequirements(e, move)) return false;
   if ((e.cooldowns.get(move.name) ?? 0) > 0) return false;
   if (move.resource === 'mana' && e.effects.some((f) => f.kind === 'silence')) return false;
-  const cost = moveCost(cfg, move, e.moveLevels.get(move.name) ?? 1);
+  const { cost, staminaShare } = entityCost(cfg, e, move);
   if (move.resource === 'stamina' && e.stamina < cost) return false;
-  if (move.resource === 'mana' && (e.mana < cost || e.stamina < magicStaminaCost(cfg, cost))) return false;
+  if (move.resource === 'mana' && (e.mana < cost || e.stamina < staminaShare)) return false;
   return true;
 }
 

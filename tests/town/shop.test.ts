@@ -172,3 +172,16 @@ test('the shop never sells below the safe stock the villagers keep', () => {
   assert.equal(t.stock.get(key)!.qty, safe);
   assert.equal(shopWares(cfg, catalog, t, CRAFTED).some((w) => w.key === key), false);
 });
+
+test('even with a won haggle, buying and selling straight back still loses', () => {
+  const won = { buy: (p: number) => Math.ceil(p * 0.9), sell: (p: number) => Math.floor(p * 1.1) }; // the config haggle margin
+  for (const item of ['gold_blade', 'grilled_chicken'] as const) {
+    const t = town({ maxBuy: 10000 });
+    t.stock.get(stackKey(item, 'common'))!.qty = 1;
+    const price = won.buy(townPrice(noSafe, catalog, t, item, 'common')!);
+    const inv = bag(price);
+    assert.notEqual(typeof buyFromShop(noSafe, catalog, t, inv, stackKey(item, 'common'), CRAFTED, won), 'string');
+    sellToShop(noSafe, catalog, t, inv, inv.pieces[0]?.id ?? stackKey(item, 'common'), NOW, won);
+    assert.ok(coinTotal(cfg, inv) < price, `${item}: paid ${price}, got ${coinTotal(cfg, inv)} back`);
+  }
+});

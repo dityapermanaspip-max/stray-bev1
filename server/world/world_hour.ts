@@ -17,7 +17,7 @@ export type TickWorld = { cfg: BalanceConfig; catalog: ItemCatalog; loot: LootDa
 export type HexInfo = { id: string; q: number; r: number; ring: number; biome: string | null };
 export type TickTown = { town: Town; population: number; jobs: Record<string, number> }; // jobs: job -> workforce share
 
-export const hexDistance = (a: HexInfo, b: HexInfo) => (Math.abs(a.q - b.q) + Math.abs(a.r - b.r) + Math.abs(a.q + a.r - b.q - b.r)) / 2;
+export const hexDistance = (a: Pick<HexInfo, 'q' | 'r'>, b: Pick<HexInfo, 'q' | 'r'>) => (Math.abs(a.q - b.q) + Math.abs(a.r - b.r) + Math.abs(a.q + a.r - b.q - b.r)) / 2;
 
 // Share of a biome's tiles that are trees (obstacle density x the tree weight among obstacles).
 export function treeShare(w: TickWorld, biome: string | null): number {

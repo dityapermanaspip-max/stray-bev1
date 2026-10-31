@@ -1,4 +1,5 @@
 import type { BalanceConfig } from '../config/balance.ts';
+import { raceExpMult, tierPoints } from '../config/growth_config.ts';
 import { STATS, type CoreStats, type Stat } from '../stats/derived.ts';
 import { moveExpRequired, moveLevelWordTier, statExpRequired, statExpRewardBase } from '../stats/curves.ts';
 
@@ -10,13 +11,15 @@ export type Progress = {
   stats: Record<Stat, StatProgress>;
   moves: Map<string, KnownMove>;
   recipes: Set<string>; // moves revealed by scrolls (known_recipes)
+  race?: string; // for the hidden race move exp rules (config growth.race_exp)
 };
 // Current core stats of a growing entity.
 export function progressStats(progress: Progress): CoreStats {
   return Object.fromEntries(STATS.map((s) => [s, progress.stats[s].base])) as CoreStats;
 }
 
-export type MoveGrowth = { statExp: Partial<Record<Stat, number>>; expScaling: number };
+// statExp: the move's stat shares (how its points split); tier: from the move's `tier:N` tag; tags for race rules.
+export type MoveGrowth = { statExp: Partial<Record<Stat, number>>; expScaling: number; tier: number; tags: string[] };
 
 // Server-side results. Numbers here never go to the client as-is.
 export type GrowthEvent =
@@ -36,17 +39,19 @@ export function addMoveExp(
 
   const events: GrowthEvent[] = [];
   const wordBefore = moveLevelWordTier(cfg, known.level);
-  known.exp += amount;
+  known.exp += amount * raceExpMult(cfg.statGrowth, progress.race, growth.tags, known.level);
+  const shares = Object.values(growth.statExp).reduce((n, v) => n + (v ?? 0), 0);
 
   while (known.level < cfg.moveLevelCap && known.exp >= moveExpRequired(cfg, known.level)) {
     known.exp -= moveExpRequired(cfg, known.level);
     known.level += 1;
     events.push({ kind: 'move_level_up', move: moveName, level: known.level });
 
-    const reward = statExpRewardBase(cfg, known.level) * growth.expScaling;
+    // Stat exp per point x the points this tier pays at this level, split by the move's stat shares.
+    const reward = statExpRewardBase(cfg, known.level) * tierPoints(cfg.statGrowth, growth.tier, known.level) * growth.expScaling;
     for (const stat of STATS) {
       const share = growth.statExp[stat];
-      if (share) progress.stats[stat].exp += reward * share;
+      if (share && shares > 0) progress.stats[stat].exp += (reward * share) / shares;
     }
   }
   if (known.level >= cfg.moveLevelCap) known.exp = 0;

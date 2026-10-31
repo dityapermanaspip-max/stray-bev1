@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { refillNodes } from '../gather/gather_repo.ts';
 import type { PopRow } from '../world/population.ts';
 import type { TickReport } from '../world/town_tick.ts';
 import { runHour, townDue, type HexInfo, type TickTown, type TickWorld } from '../world/world_hour.ts';
@@ -77,6 +78,7 @@ export async function runWorldHour(pool: pg.Pool, w: TickWorld, roundId: string,
     const towns = townDue(w, hour) ? await lockTowns(client, hexes.map((h) => h.id)) : [];
     for (const [ref, r] of runHour(w, hexes, pop as Map<string, PopRow[]>, towns, hour)) reports.set(ref, r);
     for (const { town } of towns) await writeTown(client, town);
+    await refillNodes(client, w.cfg.gather); // resource nodes grow back
     const rows = [...pop.values()].flat();
     await client.query(
       `UPDATE world.field_population p SET natural_count = x.n, corrupted_count = x.c

@@ -13,6 +13,7 @@ export type FieldView = {
   height: number;
   tiles: FieldTileView[]; // row-major: y * width + x
   exits: { id: string; x: number; y: number }[];
+  nodes: { x: number; y: number; kind: string }[]; // resource nodes: rock, tree, herb, fish (dark or not stays hidden)
 };
 
 export type JoinOptions = { name: string; ref: string };
@@ -26,3 +27,9 @@ export type TravelOrder = { ref: string };
 // (client.consumeSeatReservation); null when the battle could not be set up.
 export type EncounterNotice = { key: string; text: string | null; seat: unknown | null };
 export type WhereAnswer = { ref: string; name: string };
+// Server -> client 'ask' before a door opens or the player leaves the field: a line and, for a door, its place name.
+// Client -> server 'answer': yes opens the door or leaves; no (or walking away) does nothing.
+export type AskView = { kind: 'door' | 'exit' | 'node'; text: string | null; place: string | null };
+// Server -> client 'gathered' after working a node: a line, and what was found (names and counts).
+export type GatherNotice = { text: string | null; finds: { name: string; qty: number }[] };
+export type AskAnswer = { yes: boolean };

@@ -5,7 +5,7 @@ import { findFieldProblems, parseBiome, parseTemplate } from '../../server/field
 import { reachable } from '../../server/field/reach.ts';
 import type { FieldGrid, FieldSpec } from '../../server/field/types.ts';
 
-// Test copies of seeds/18_fields and 20_slopes.
+// Test copies of seeds/04_world/01_fields and 03_slopes.
 const openField = parseTemplate('open_field', 'open', 20, 20, { obstacle_mult: 1 });
 const corridor = parseTemplate('corridor_path', 'corridor', 8, 20, { obstacle_mult: 0.8 });
 const meadow = parseBiome('meadow', {

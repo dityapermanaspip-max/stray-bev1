@@ -19,7 +19,7 @@ function itemMove(item: string, effect: EffectDef): MoveDef {
     name: `item:${item}`, category: 'item', damageType, damageKind: damageType ? 'physical' : null, element: null,
     resource: null, cost: 0, target: 'one_enemy', rowRule: 'any', windup: 0, recovery: 0, cooldown: null,
     channel: false, expScaling: 0, overrides: { damage: 0, recovery: 0, cost: 0 }, growthTag: 'item',
-    tags: [], effects: [effect], requires: [], statExp: {}, gives: [], brokenBy: [],
+    tags: [], tier: 1, effects: [effect], requires: [], statExp: {}, gives: [], brokenBy: [],
   };
 }
 

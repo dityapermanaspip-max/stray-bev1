@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type pg from 'pg';
 import { findRingProblems, ringConfig } from '../config/world_config.ts';
+import { findWorldGenProblems, worldGenConfig } from '../config/worldgen_config.ts';
 import { loadRecipes } from '../data/economy_repo.ts';
 import { loadFieldData } from '../data/field_repo.ts';
 import { loadItemCatalog } from '../data/item_repo.ts';
@@ -9,8 +10,13 @@ import { findFieldProblems } from '../field/parse.ts';
 import { EPIPHANY_PREFIX, UNLOCK_KINDS } from '../growth/unlocks.ts';
 import { LOAD_TIERS } from '../inventory/bag.ts';
 import { LOOT_LINE_KEYS } from '../inventory/butcher.ts';
+import { findGatherProblems, gatherConfig } from '../config/gather_config.ts';
+import { FOOD_LINE_KEYS } from '../food/food_service.ts';
+import { GATHER_LINE_KEYS } from '../gather/gather_service.ts';
 import { createPool } from './pool.ts';
 import {
+  BIOME_NAME_PREFIX,
+  NODE_NAME_PREFIX,
   findArrivalProblems,
   findBattleProblems,
   findCraftProblems,
@@ -81,6 +87,7 @@ export async function runStartupCheck(pool: pg.Pool): Promise<string[]> {
     'SELECT species_name, base_stats, ring_min, ring_max FROM entity.species',
   );
   const rings = config.get('world.rings');
+  const standing = config.get('standing') as { favor_tiers?: number[] } | undefined;
   const fieldRefs = await pool.query<{ what: string; template: string; biome: string | null }>(
     `SELECT format('hex %s,%s', q, r) AS what, field_template AS template, biome FROM world.hexes
      UNION ALL SELECT format('corridor %s', id), template, NULL FROM world.corridors`,
@@ -105,8 +112,22 @@ export async function runStartupCheck(pool: pg.Pool): Promise<string[]> {
       ? findLootProblems([...catalog.values()], LOOT_LINE_KEYS, lineKeys, tierKeys, rot.hours.length + 1, coins, moveNames, butchery.move)
       : ['balance_config carcass_rot or butchery is missing']),
     ...findFieldProblems([...fields.templates.values()], [...fields.biomes.values()]),
-    ...findTownLineProblems([...fields.templates.values()].flatMap((t) => t.town?.buildings.map((b) => b.service) ?? []), lineKeys),
+    ...[...fields.biomes.keys()].filter((b) => !lineKeys.has(BIOME_NAME_PREFIX + b)).map((b) => `biome ${b}: no ${BIOME_NAME_PREFIX} line`),
+    ...(config.has('world.gen') && rings
+      ? findWorldGenProblems(worldGenConfig(config.get('world.gen') as Parameters<typeof worldGenConfig>[0]), (rings as { count: number }).count, new Set(fields.biomes.keys()))
+      : ['balance_config world.gen is missing']),
+    ...findTownLineProblems(
+      [...fields.templates.values()].flatMap((t) => t.town?.buildings.map((b) => b.service) ?? []), lineKeys, tierKeys,
+      standing?.favor_tiers?.length ?? 0,
+    ),
     ...findCraftProblems(await loadRecipes(pool), new Set(catalog.keys()), lineKeys),
+    ...[...GATHER_LINE_KEYS, ...FOOD_LINE_KEYS].filter((k) => !lineKeys.has(k)).map((k) => `${k}: no lines`),
+    ...(config.has('gather') && config.has('food')
+      ? [
+        ...findGatherProblems(gatherConfig(config.get('gather') as Parameters<typeof gatherConfig>[0]), moveNames, new Set(await nodeTables(pool))),
+        ...Object.keys((config.get('gather') as { kinds: object }).kinds).filter((k) => !lineKeys.has(NODE_NAME_PREFIX + k)).map((k) => `node ${k}: no ${NODE_NAME_PREFIX} line`),
+      ]
+      : ['balance_config gather or food is missing']),
     ...(rings
       ? findRingProblems(ringConfig(rings as Parameters<typeof ringConfig>[0]), species.rows.map((s) => ({
         name: s.species_name, total: Object.values(s.base_stats).reduce((n, v) => n + v, 0), ringMin: s.ring_min, ringMax: s.ring_max,
@@ -136,4 +157,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   } finally {
     await pool.end();
   }
+}
+
+async function nodeTables(pool: pg.Pool): Promise<string[]> {
+  return (await pool.query<{ table_name: string }>("SELECT table_name FROM item.loot_tables WHERE owner = 'node'")).rows.map((r) => r.table_name);
 }

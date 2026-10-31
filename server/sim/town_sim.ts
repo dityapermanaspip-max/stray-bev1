@@ -1,7 +1,7 @@
 import { parseArgs } from 'node:util';
 import { loadBalance } from '../config/balance.ts';
 import { loadRecipes, loadTown, type Town } from '../data/economy_repo.ts';
-import { devRoundId, loadFieldData } from '../data/field_repo.ts';
+import { currentRoundId, loadFieldData } from '../data/field_repo.ts';
 import { loadItemCatalog } from '../data/item_repo.ts';
 import { loadLoot } from '../data/loot_repo.ts';
 import { loadPopulation } from '../data/population_repo.ts';
@@ -23,7 +23,7 @@ const { values } = parseArgs({
 });
 const pool = createPool();
 const cfg = await loadBalance(pool);
-const roundId = await devRoundId(pool);
+const roundId = await currentRoundId(pool);
 if (!roundId) throw new Error('no dev round: run npm run db:seed');
 const [catalog, loot, recipes, fields] = await Promise.all([loadItemCatalog(pool), loadLoot(pool), loadRecipes(pool), loadFieldData(pool)]);
 const hexes = (await pool.query<HexInfo>('SELECT id::text AS id, q, r, ring, biome FROM world.hexes WHERE round_id = $1', [roundId])).rows;

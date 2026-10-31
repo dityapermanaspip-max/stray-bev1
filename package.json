@@ -19,7 +19,8 @@
     "session": "node --env-file=.env server/sim/session.ts",
     "play": "node --env-file=.env server/sim/play.ts",
     "admin": "node --env-file=.env server/admin/server.ts",
-    "game": "node --env-file=.env server/game/server.ts"
+    "game": "node --env-file=.env server/game/server.ts",
+    "world:new": "node --env-file=.env server/worldgen/new_world.ts"
   },
   "dependencies": {
     "@colyseus/core": "0.18.19",

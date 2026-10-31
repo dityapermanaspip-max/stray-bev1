@@ -88,11 +88,16 @@ export async function saveLoadout(pool: pg.Pool, entityId: string, loadout: Load
   await inTransaction(pool, (client) => writeLoadout(client, entityId, loadout));
 }
 
-// Bag and gear changes, plus any basic weapon move learned by equipping, at once.
-export async function saveGear(pool: pg.Pool, entityId: string, inv: Inventory, progress: Progress): Promise<void> {
-  await inTransaction(pool, async (client) => {
+// Bag and gear changes, plus any move learned or grown (a weapon's basic move, a life skill), at once.
+// `first` runs in the same transaction; when it says no, nothing is written (a spent resource node).
+export async function saveGear(
+  pool: pg.Pool, entityId: string, inv: Inventory, progress: Progress, first?: (client: pg.PoolClient) => Promise<boolean>,
+): Promise<boolean> {
+  return inTransaction(pool, async (client) => {
+    if (first && !(await first(client))) return false;
     await writeProgress(client, entityId, progress, false);
     await writeInventory(client, entityId, inv);
+    return true;
   });
 }
 

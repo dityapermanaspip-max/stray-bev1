@@ -32,6 +32,12 @@ ALTER TABLE entity.species
   ADD CONSTRAINT fk_species_loot_native FOREIGN KEY (loot_table_native) REFERENCES item.loot_tables(id),
   ADD CONSTRAINT fk_species_loot_corrupted FOREIGN KEY (loot_table_corrupted) REFERENCES item.loot_tables(id);
 
+ALTER TABLE world.entity_positions
+  ADD CONSTRAINT fk_entity_positions_entity FOREIGN KEY (entity_id) REFERENCES entity.entities(id) ON DELETE CASCADE;
+
+ALTER TABLE world.town_stock
+  ADD CONSTRAINT fk_town_stock_item FOREIGN KEY (item_id) REFERENCES item.items(id);
+
 ALTER TABLE entity.entities
   ADD CONSTRAINT fk_entities_portrait FOREIGN KEY (portrait_id) REFERENCES presentation.portraits(id);
 
@@ -39,3 +45,4 @@ ALTER TABLE entity.entities
 CREATE INDEX idx_borders_round_hex ON world.borders(round_id, hex_a);
 CREATE INDEX idx_field_population_field ON world.field_population(field_ref);
 CREATE INDEX idx_corpses_field ON world.corpses(field_ref);
+CREATE INDEX idx_entity_positions_field ON world.entity_positions(field_ref);

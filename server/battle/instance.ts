@@ -9,7 +9,7 @@ import { spendThrown } from './effects/gear_hooks.ts';
 import { HANDLERS } from './effects/registry.ts';
 import { payMoveExp } from './exp.ts';
 import { effectTurn } from './over_time.ts';
-import { expandTargets, isAlive, magicStaminaCost, moveCost, validTargets } from './rules.ts';
+import { entityCost, expandTargets, isAlive, validTargets } from './rules.ts';
 import type { BattleData, BattleEntity, BattleEvent, MoveDef, PendingAction, Side } from './types.ts';
 
 // One private battle. The server drives it with tick(ms); clients only submit actions.
@@ -112,12 +112,11 @@ export class BattleInstance {
 
   private begin(e: BattleEntity, action: PendingAction): void {
     const move = this.core.data.moves.get(action.move)!;
-    const level = e.moveLevels.get(move.name) ?? 1;
     dropStance(this.core, e); // acting ends a waiting counter stance
     if (move.cooldown) e.cooldowns.set(move.name, move.cooldown * 1000);
-    const cost = moveCost(this.core.cfg, move, level);
+    const { cost, staminaShare } = entityCost(this.core.cfg, e, move);
     if (move.resource) this.core.spend(e, move.resource, cost);
-    if (move.resource === 'mana') this.core.spend(e, 'stamina', magicStaminaCost(this.core.cfg, cost));
+    if (staminaShare > 0) this.core.spend(e, 'stamina', staminaShare);
     for (const req of move.requires) {
       if (req.kind === 'ammo_type') e.ammo.set(req.value, (e.ammo.get(req.value) ?? 0) - 1);
     }

@@ -16,6 +16,9 @@ import { addCoins, payCoins } from '../inventory/money.ts';
 export type Offer = { ref: string; item: string; qty: number; price: number }; // the player sells
 export type Ware = { key: string; item: string; qty: number; price: number }; // the player buys
 export type Trade = { deltas: StockRow[]; purseDelta: number; line: string };
+// Standing moves prices for one player (a won haggle, the pushover mark, a generous trade): what they pay, what they get.
+export type PriceAdjust = { buy: (price: number) => number; sell: (price: number) => number };
+export const AS_IS: PriceAdjust = { buy: (p) => p, sell: (p) => p };
 
 function held(town: Town, item: string): number {
   let n = 0;
@@ -52,15 +55,15 @@ function offerPrice(cfg: BalanceConfig, catalog: ItemCatalog, town: Town, item: 
 }
 
 // Everything in the bag the shop would look at (not what is worn). A price of 0 means it is worth nothing here.
-export function shopOffers(cfg: BalanceConfig, catalog: ItemCatalog, town: Town, inv: Inventory, now: number): Offer[] {
+export function shopOffers(cfg: BalanceConfig, catalog: ItemCatalog, town: Town, inv: Inventory, now: number, adj = AS_IS): Offer[] {
   const out: Offer[] = [];
   for (const s of inv.stacks.values()) {
     const price = s.slot ? null : offerPrice(cfg, catalog, town, s.item, s.quality, null, now);
-    if (price !== null) out.push({ ref: stackKey(s.item, s.quality), item: s.item, qty: s.qty, price });
+    if (price !== null) out.push({ ref: stackKey(s.item, s.quality), item: s.item, qty: s.qty, price: adj.sell(price) });
   }
   for (const p of inv.pieces) {
     const price = p.slot ? null : offerPrice(cfg, catalog, town, p.item, p.quality, p, now);
-    if (price !== null) out.push({ ref: p.id, item: p.item, qty: 1, price });
+    if (price !== null) out.push({ ref: p.id, item: p.item, qty: 1, price: adj.sell(price) });
   }
   return out;
 }
@@ -77,13 +80,13 @@ function spare(cfg: BalanceConfig, catalog: ItemCatalog, town: Town, row: StockR
   return def ? Math.max(0, Math.min(row.qty, held(town, row.item) - safeQty(cfg.economy, def, town.specialties))) : 0;
 }
 
-export function shopWares(cfg: BalanceConfig, catalog: ItemCatalog, town: Town, crafted: ReadonlySet<string>): Ware[] {
+export function shopWares(cfg: BalanceConfig, catalog: ItemCatalog, town: Town, crafted: ReadonlySet<string>, adj = AS_IS): Ware[] {
   return [...town.stock.values()]
     .filter((r) => onShelf(cfg, catalog, crafted, r.item))
     .flatMap((r) => {
       const qty = spare(cfg, catalog, town, r);
       const price = townPrice(cfg, catalog, town, r.item, r.quality);
-      return price === null || qty < 1 ? [] : [{ key: stackKey(r.item, r.quality), item: r.item, qty, price }];
+      return price === null || qty < 1 ? [] : [{ key: stackKey(r.item, r.quality), item: r.item, qty, price: adj.buy(price) }];
     });
 }
 
@@ -96,13 +99,14 @@ function shelve(town: Town, item: string, quality: string, qty: number): StockRo
 }
 
 // The player sells one of something (a stack key or a piece id). Answers a line key on refusal.
-export function sellToShop(cfg: BalanceConfig, catalog: ItemCatalog, town: Town, inv: Inventory, ref: string, now: number): Trade | string {
+export function sellToShop(cfg: BalanceConfig, catalog: ItemCatalog, town: Town, inv: Inventory, ref: string, now: number, adj = AS_IS): Trade | string {
   const stack = inv.stacks.get(ref);
   const piece = stack ? null : inv.pieces.find((p) => p.id === ref) ?? null;
   const thing = stack ?? piece;
   if (!thing || thing.slot) return 'town.shop.nothing';
   if (piece && carcassData(piece)?.corrupted && !cfg.loot.buyers.shopBuysCorrupted) return 'shop.refuse_corrupted';
-  const price = offerPrice(cfg, catalog, town, thing.item, thing.quality, piece, now);
+  const offer = offerPrice(cfg, catalog, town, thing.item, thing.quality, piece, now);
+  const price = offer === null ? null : adj.sell(offer);
   if (price === null || price <= 0) return 'town.shop.nothing';
   if (price > town.maxBuy) return 'town.shop.too_dear';
   if (price > town.purse) return 'town.shop.no_money';
@@ -114,11 +118,14 @@ export function sellToShop(cfg: BalanceConfig, catalog: ItemCatalog, town: Town,
 }
 
 // The player buys one off the shelf (a stock key).
-export function buyFromShop(cfg: BalanceConfig, catalog: ItemCatalog, town: Town, inv: Inventory, key: string, crafted: ReadonlySet<string>): Trade | string {
+export function buyFromShop(
+  cfg: BalanceConfig, catalog: ItemCatalog, town: Town, inv: Inventory, key: string, crafted: ReadonlySet<string>, adj = AS_IS,
+): Trade | string {
   const row = town.stock.get(key);
   if (!row || spare(cfg, catalog, town, row) < 1 || !onShelf(cfg, catalog, crafted, row.item)) return 'town.shop.out';
-  const price = townPrice(cfg, catalog, town, row.item, row.quality);
-  if (price === null) return 'town.shop.out';
+  const ask = townPrice(cfg, catalog, town, row.item, row.quality);
+  if (ask === null) return 'town.shop.out';
+  const price = adj.buy(ask);
   if (!payCoins(cfg, catalog, inv, price)) return 'town.shop.cannot_pay';
   addItem(catalog, inv, row.item, 1, undefined, row.quality);
   town.purse += price;

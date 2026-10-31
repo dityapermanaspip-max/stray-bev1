@@ -12,7 +12,7 @@ import { carcassData, freshnessTier } from './loot.ts';
 export type BagView = {
   load: { tier: number; text: string | null };
   slots: { slot: string; item: string | null }[];
-  items: { ref: string; item: string; name: string; qty: number; slot: string | null; wearable: boolean; condition: number | null;
+  items: { ref: string; item: string; name: string; qty: number; slot: string | null; wearable: boolean; edible: boolean; condition: number | null;
     freshness: { tier: number; text: string | null } | null }[];
 };
 
@@ -30,6 +30,7 @@ export function buildBagView(
 ): BagView {
   const name = (item: string) => lines.pick(rng, ITEM_NAME_PREFIX + item)?.text ?? item;
   const wearable = (item: string) => { const def = catalog.get(item); return !!def && fitsSlot(def) !== null; };
+  const edible = (item: string) => catalog.get(item)?.edible === true;
   const tier = loadTier(cfg, carriedWeight(cfg, catalog, inv), maxWeight);
   const worn = equipped(inv);
   const freshnessOf = (p: (typeof inv.pieces)[number]) => {
@@ -40,10 +41,11 @@ export function buildBagView(
   };
 
   const stacks = [...inv.stacks.values()].map((s) => ({
-    ref: stackKey(s.item, s.quality), item: s.item, name: name(s.item), qty: s.qty, slot: s.slot, wearable: wearable(s.item), condition: null, freshness: null,
+    ref: stackKey(s.item, s.quality), item: s.item, name: name(s.item), qty: s.qty, slot: s.slot, wearable: wearable(s.item), edible: edible(s.item),
+    condition: null, freshness: null,
   }));
   const pieces = inv.pieces.map((p) => ({
-    ref: p.id, item: p.item, name: name(p.item), qty: 1, slot: p.slot, wearable: wearable(p.item),
+    ref: p.id, item: p.item, name: name(p.item), qty: 1, slot: p.slot, wearable: wearable(p.item), edible: edible(p.item),
     condition: conditionTier(cfg, p.durability, catalog.get(p.item)?.maxDurability ?? 0),
     freshness: freshnessOf(p),
   }));

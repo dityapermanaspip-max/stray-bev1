@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util';
 import { loadBalance } from '../config/balance.ts';
-import { loadLinks, devRoundId } from '../data/field_repo.ts';
+import { loadLinks, currentRoundId } from '../data/field_repo.ts';
 import { loadPopulation } from '../data/population_repo.ts';
 import { createPool } from '../db/pool.ts';
 import { blendRows, density, encounterPermille, groupLimit } from '../world/encounter.ts';
@@ -13,7 +13,7 @@ import { simulate, type PopRow } from '../world/population.ts';
 const { values } = parseArgs({ options: { days: { type: 'string', default: '10' }, luck: { type: 'string' }, steps: { type: 'string', default: '20' } } });
 const pool = createPool();
 const cfg = await loadBalance(pool);
-const roundId = await devRoundId(pool);
+const roundId = await currentRoundId(pool);
 if (!roundId) throw new Error('no dev round: run npm run db:seed');
 const links = await loadLinks(pool, roundId);
 const hexes = [...links.hexes.values()];

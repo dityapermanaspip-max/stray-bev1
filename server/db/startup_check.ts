@@ -35,15 +35,20 @@ export const ITEM_NAME_PREFIX = 'item_name_';
 export const SPECIES_NAME_PREFIX = 'species_name_';
 export const BODY_WORD_PREFIX = 'body_word.';
 export const SERVICE_NAME_PREFIX = 'service_name_';
+export const BIOME_NAME_PREFIX = 'biome_name_'; // world map biome names
+export const NODE_NAME_PREFIX = 'node_name_'; // resource node kinds (gather config)
 export const BATTLE_LINE_KEYS = ['battle.won', 'battle.lost', 'battle.cannot'];
 export const TOWN_LINE_KEYS = [
   'town.inn.rested', 'town.inn.no_money', 'town.closed', 'town.shop.nothing', 'loadout.not_here',
   'town.shop.sold', 'town.shop.bought', 'town.shop.no_money', 'town.shop.too_dear', 'town.shop.cannot_pay', 'town.shop.out',
   'town.craft.done', 'town.craft.missing', 'town.craft.cannot_pay',
+  'ask.door', 'ask.exit', // the yes / no question before a door or an exit (game/ask.ts)
+  // the shopkeeper's standing (standing/shop_standing.ts); greetings also need tiers 1-3 (checked below)
+  'town.shop.greet', 'town.shop.haggle_won', 'town.shop.haggle_lost', 'town.shop.generous', 'town.shop.pushover',
   // status window refusals (game/status_service.ts)
   'loadout.in_battle', 'loadout.bad_slot', 'loadout.unknown_move', 'loadout.not_slottable', 'gear.not_held', 'gear.not_wearable', 'gear.bad_slot',
 ];
-const NAME_PREFIXES = [NAME_PREFIX, ITEM_NAME_PREFIX, SPECIES_NAME_PREFIX, BODY_WORD_PREFIX, SERVICE_NAME_PREFIX];
+const NAME_PREFIXES = [NAME_PREFIX, ITEM_NAME_PREFIX, SPECIES_NAME_PREFIX, BODY_WORD_PREFIX, SERVICE_NAME_PREFIX, BIOME_NAME_PREFIX, NODE_NAME_PREFIX];
 const isNameKey = (key: string) => NAME_PREFIXES.some((p) => key.startsWith(p));
 const isSingleLineKey = (key: string) => isNameKey(key) || key.startsWith(ARRIVAL_PREFIX);
 
@@ -204,10 +209,13 @@ export function findBattleProblems(
 }
 
 // Town text: a name for every service a town template has, and the door sentence pools.
-export function findTownLineProblems(services: string[], lineKeys: Set<string>): string[] {
+// favorTiers: how many favor tiers above stranger; the shopkeeper greets at each of them.
+export function findTownLineProblems(services: string[], lineKeys: Set<string>, tierKeys = new Set<string>(), favorTiers = 0): string[] {
+  const greet = Array.from({ length: favorTiers }, (_, i) => i + 1).filter((t) => !tierKeys.has(`town.shop.greet|${t}`));
   return [
     ...[...new Set(services)].filter((s) => !lineKeys.has(SERVICE_NAME_PREFIX + s)).map((s) => `service ${s}: no ${SERVICE_NAME_PREFIX} line`),
     ...TOWN_LINE_KEYS.filter((k) => !lineKeys.has(k)).map((k) => `${k}: no lines`),
+    ...greet.map((t) => `town.shop.greet tier ${t}: no lines`),
   ];
 }
 

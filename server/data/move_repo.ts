@@ -8,6 +8,7 @@ import type { UnlockRule } from '../growth/unlocks.ts';
 const n = (v: unknown): number => Number(v);
 const nOrNull = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
 const GROWTH_PREFIX = 'growth.';
+export const TIER_PREFIX = 'tier:'; // tier:2, tier:3 (no tag: tier 1)
 
 type MoveRow = {
   id: string;
@@ -71,6 +72,7 @@ export async function loadMoves(pool: pg.Pool): Promise<Map<string, MoveDef>> {
       },
       growthTag: '',
       tags: [],
+      tier: 1,
       effects: [],
       requires: [],
       statExp: {},
@@ -104,6 +106,7 @@ export async function loadMoves(pool: pg.Pool): Promise<Map<string, MoveDef>> {
     if (!move) continue;
     move.tags.push(r.tag);
     if (r.tag.startsWith(GROWTH_PREFIX)) move.growthTag = r.tag.slice(GROWTH_PREFIX.length);
+    if (r.tag.startsWith(TIER_PREFIX)) move.tier = Number(r.tag.slice(TIER_PREFIX.length)) || 1;
   }
 
   return new Map([...byId.values()].map((m) => [m.name, m]));

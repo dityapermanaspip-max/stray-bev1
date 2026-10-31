@@ -56,7 +56,8 @@ export async function finishFight({ world, rng }: EndWorld, f: Fight, battleId: 
 
   const { fieldRef } = f.order;
   const home = populationHome(world, fieldRef);
-  const wakeRef = won ? null : (await loadWake(world.pool, f.player.id)) ?? fieldRef;
+  const saved = won ? null : await loadWake(world.pool, f.player.id);
+  const wakeRef = won ? null : saved && world.links.hexes.has(saved) ? saved : fieldRef; // a town of an ended round does not count
   const wakeSpot = wakeRef ? (await gridFor(world, wakeRef))?.grid.spawn ?? null : null;
   const wake = wakeRef && wakeSpot ? { ref: wakeRef, ...wakeSpot } : null;
   await saveBattleResults(

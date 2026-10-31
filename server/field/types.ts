@@ -26,6 +26,7 @@ export type Biome = {
   hills: { max: number; scale: number; steep: number }; // max level (0-3), hill size in tiles, contrast (1 = rolling, higher = plateaus and cliffs)
   lowland: { share: number; terrain: Record<string, number> }; // part of height-0 ground under water or swamp (blocked)
   slopeShare: number; // part of cliff edges that get a slope (more are added where needed to keep fields connected)
+  nodes: Record<string, number>; // resource nodes per field by kind (rock, tree, herb, fish)
 };
 
 // blend: share of biome B along the field's length (corridors run from y = 0 to the far end).
@@ -44,6 +45,9 @@ export type Tile = {
 };
 export type Point = { x: number; y: number };
 export type Exit = Point & { id: string }; // open fields: d0-d5 (hex directions); corridors: a (start), b (end)
+// A resource node on a walkable tile. rank (0-1, fixed by the seed): the node is dark (corrupted) while the field's
+// hidden corruption share is above it, so more nodes darken as corruption spreads.
+export type ResourceNode = Point & { id: number; kind: string; rank: number };
 
 export type FieldGrid = {
   width: number;
@@ -51,6 +55,7 @@ export type FieldGrid = {
   tiles: Tile[]; // row-major: index = y * width + x
   spawn: Point; // field entry; in a town, the middle of the road cross (where a passed-out player wakes)
   exits: Exit[];
+  nodes: ResourceNode[]; // placed by field/nodes.ts once the gather config is known (empty from generateField)
 };
 
 export const tileAt = (g: FieldGrid, x: number, y: number): Tile | undefined =>

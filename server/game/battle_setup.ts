@@ -1,8 +1,11 @@
+import { applyTraits } from '../growth/traits.ts';
 import { matchMaker } from '@colyseus/core';
 import { growerEntity } from '../battle/from_state.ts';
+import { placeFoes } from '../battle/formation.ts';
 import { BattleInstance } from '../battle/instance.ts';
 import type { BattleEntity } from '../battle/types.ts';
 import { loadEntityState, type EntityState } from '../data/entity_load.ts';
+import { fieldRing } from '../data/field_repo.ts';
 import { loadInventory } from '../data/item_repo.ts';
 import { mealActive, mealCosts } from '../food/food.ts';
 import { loadMeal } from '../food/food_service.ts';
@@ -12,7 +15,9 @@ import { buildCreature } from '../sim/combatants.ts';
 import type { Foe } from '../world/encounter.ts';
 import { BATTLE_ROOM } from '../../shared/battle.ts';
 import { startFighting, stopFighting } from '../util/entity_lock.ts';
+import { createRng } from '../util/rng.ts';
 import type { GameWorld } from './world.ts';
+import { weakenedProgress } from '../boss/boss_rules.ts';
 
 // Builds one field battle from the database: the player as saved (body, gear, loadout) against the creatures met.
 
@@ -26,31 +31,54 @@ export type Fight = {
   foes: BattleEntity[];
   state: EntityState;
   inventory: Inventory;
+  vices: Map<string, EntityState>; // battle entity id (= entity id) -> a vice's saved state, so it grows and is saved
 };
 
 export async function setUpFight(world: GameWorld, order: BattleOrder): Promise<Fight> {
   const { cfg } = world.data;
-  const [state, inventory, meal] = await Promise.all([
+  const [state, inventory, meal, ring] = await Promise.all([
     loadEntityState(world.pool, order.entityId), loadInventory(world.pool, order.entityId), loadMeal(world.pool, order.entityId),
+    fieldRing(world.pool, order.fieldRef),
   ]);
   const player = growerEntity(cfg, {
-    id: order.entityId, kind: 'player', side: 'party', row: 'front', speaker: 'self', controller: 'player',
+    id: order.entityId, kind: 'player', side: 'party', slot: state.slot, speaker: 'self', controller: 'player',
     progress: state.progress, loadout: state.loadout, bodyParts: state.bodyParts, body: state.body,
     gear: buildCombatGear(cfg, world.catalog, inventory),
   });
+  for (const [k, m] of state.raceResist) player.resist.set(k, (player.resist.get(k) ?? 1) * m); // hidden race resistances
+  applyTraits(player, state.traits); // hidden trait resistances and stat additions
   if (mealActive(cfg, meal, Date.now())) player.costMult = mealCosts(world.catalog.get(meal.item)); // hidden food effect
-  const foes = order.foes.map((f, i) => {
+  const roll = createRng((order.seed ^ 0x5bd1e995) >>> 0); // creatures rolled from the battle seed
+  const slots = placeFoes(cfg.formation, order.foes.length); // front first; an encounter may name its own slots
+  const vices = new Map<string, EntityState>();
+  const foes = await Promise.all(order.foes.slice(0, slots.length).map(async (f, i) => {
+    const slot = f.slot ?? slots[i];
+    if (f.vice) {
+      const vs = await loadEntityState(world.pool, f.vice.id); // a named vice fights as saved and grows like a player
+      vices.set(f.vice.id, vs);
+      return growerEntity(cfg, {
+        id: f.vice.id, kind: 'named', side: 'enemy', slot, speaker: 'generic', controller: 'ai',
+        progress: vs.progress, loadout: vs.loadout, bodyParts: vs.bodyParts, body: null,
+      });
+    }
+    if (f.boss) {
+      const bs = await loadEntityState(world.pool, f.boss.id); // full health every attempt, weakened by keys; no growth here
+      return growerEntity(cfg, {
+        id: f.boss.id, kind: 'boss', side: 'enemy', slot, speaker: 'generic', controller: 'ai',
+        progress: weakenedProgress(bs.progress, f.boss.weaken), loadout: bs.loadout, bodyParts: bs.bodyParts, body: null,
+      });
+    }
     const def = world.species.get(f.species);
     if (!def) throw new Error(`unknown species ${f.species}`);
-    return buildCreature(cfg, def, i + 1, f.corrupted);
-  });
+    return buildCreature(cfg, def, i + 1, f.corrupted, ring ?? cfg.rings.count, roll, slot);
+  }));
   const instance = new BattleInstance(world.data, {
     entities: [player, ...foes],
-    progress: new Map([[order.entityId, state.progress]]),
+    progress: new Map([[order.entityId, state.progress], ...[...vices].map(([id, v]) => [id, v.progress] as const)]),
     summonerSides: new Set(),
     seed: order.seed,
   });
-  return { order, instance, player, foes, state, inventory };
+  return { order, instance, player, foes, state, inventory, vices };
 }
 
 // Snapshot shape for battle.battles.state (server only).
@@ -71,7 +99,13 @@ export async function openBattle(order: BattleOrder): Promise<unknown | null> {
     return await matchMaker.reserveSeatFor(room, {}, { entityId: order.entityId });
   } catch (err) {
     console.error(`battle setup failed: ${(err as Error).message}`);
-    stopFighting(order.entityId);
+    releaseFight(order);
     return null;
   }
+}
+
+// The player and any vice of the order are free again (battle over or never set up).
+export function releaseFight(order: BattleOrder): void {
+  stopFighting(order.entityId);
+  for (const f of order.foes) if (f.vice) stopFighting(f.vice.id);
 }

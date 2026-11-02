@@ -90,6 +90,8 @@ export type CombatWeapon = {
 export type CombatGear = {
   weaponType: string | null;
   weapon: CombatWeapon | null;
+  offHandType: string | null; // the second weapon's type (dual wield) or a shield's; null when the off hand is free
+  offHand: CombatWeapon | null;
   punchPower: number;
   kickPower: number;
   defense: number;
@@ -99,6 +101,8 @@ export type CombatGear = {
   triggers: GearTrigger[];
   wear: Map<string, number>; // piece id -> durability lost this fight
   thrownSpent: number;
+  ammo: { type: string; key: string; qty: number }[]; // ammo stacks in the bag (arrows), by stack key
+  ammoSpent: Map<string, number>; // ammo type -> fired this fight
 };
 
 export type Phase = 'filling' | 'ready' | 'winding' | 'recovering' | 'downed';
@@ -109,7 +113,8 @@ export type BattleEntity = {
   id: string;
   kind: EntityKind;
   side: Side;
-  row: Row;
+  slot: number; // battle formation slot (formation.ts); change it only with setSlot
+  row: Row; // worked out from the slot
   speaker: string | null; // null = does not speak lines
   grows: boolean;
   corrupted: boolean;
@@ -153,6 +158,7 @@ export type BattleEvent =
   | { type: 'downed'; entity: string }
   | { type: 'learned'; entity: string; move: string }
   | { type: 'counter'; entity: string; move: string; target: string }
+  | { type: 'moved'; entity: string; slot: number; row: Row } // pushed to another slot (knockback)
   | { type: 'end'; winner: Side };
 
 export type BattleData = {

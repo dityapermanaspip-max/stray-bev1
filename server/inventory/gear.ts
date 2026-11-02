@@ -5,10 +5,13 @@ import { stackKey, type Inventory } from './bag.ts';
 import { fitsSlot, type ItemCatalog } from './items.ts';
 
 // Wearing and wielding. Same swap rule as the loadout: in town only, never in battle (config flag lifts town).
-// Two-handed weapons take the main hand and keep the off hand empty.
-// The first equip of a weapon teaches its basic move (known, not put in the move loadout).
+// Two-handed weapons take the main hand and keep the off hand empty. Off-hand-only items (shields) go in the off
+// hand for anyone. A second weapon in the off hand needs dual wield (a trait flag); without it a new weapon takes the
+// main hand and the other one comes off. A pair held as one item in both hands (tonfa, wield.needs_dual) needs dual wield.
+// The first equip of a weapon teaches its basic move (known, not put in the move loadout); the first time it is held as a
+// second weapon also teaches its dual move (wield.off_grants_move). A shield teaches both its moves on the first equip.
 
-export type GearError = 'in_battle' | 'not_in_town' | 'not_held' | 'not_wearable' | 'bad_slot';
+export type GearError = 'in_battle' | 'not_in_town' | 'not_held' | 'not_wearable' | 'bad_slot' | 'no_dual_wield';
 export type GearRef = { piece: string } | { stack: string }; // stack = stack key (item@quality)
 export type Held = { ref: GearRef; item: string };
 export type GearChange = { kind: string; item: string; learned: string | null; freed: Held[] };
@@ -54,6 +57,7 @@ export function equipGear(
   ref: GearRef,
   place: SwapPlace,
   wanted: string | null = null,
+  dual = false,
 ): GearError | GearChange {
   const blocked = canSwap(cfg, place);
   if (blocked) return blocked as GearError;
@@ -62,12 +66,23 @@ export function equipGear(
   const def = catalog.get(held.item)!;
   const fits = fitsSlot(def);
   if (!fits) return 'not_wearable';
+  if (def.wield?.needsDual && !dual) return 'no_dual_wield';
 
   const twoHanded = def.wield?.hands === 2 && !def.worn;
+  const offOnly = def.wield?.offHandOnly === true && !def.worn;
   const candidates = cfg.gear.slots.filter((s) => s.accepts === fits).map((s) => s.slot);
-  if (wanted !== null && (!candidates.includes(wanted) || (twoHanded && wanted !== MAIN))) return 'bad_slot';
+  if (wanted !== null && (!candidates.includes(wanted) || (twoHanded && wanted !== MAIN) || (offOnly && wanted !== OFF))) {
+    return 'bad_slot';
+  }
   const now = equipped(inv);
-  const slot = twoHanded ? MAIN : (wanted ?? candidates.find((s) => !now.has(s)) ?? candidates[0]);
+  const isWeapon = (h: Held | undefined) => Boolean(h && !sameRef(h.ref, ref) && catalog.get(h.item)!.wield && !catalog.get(h.item)!.wield!.offHandOnly);
+  let slot = twoHanded ? MAIN : offOnly ? OFF : (wanted ?? candidates.find((s) => !now.has(s)) ?? candidates[0]);
+  if (def.wield && !twoHanded && !offOnly && !dual) {
+    if (slot === OFF && isWeapon(now.get(MAIN)) && catalog.get(now.get(MAIN)!.item)!.wield!.hands !== 2) {
+      if (wanted === OFF) return 'no_dual_wield';
+      slot = MAIN;
+    }
+  }
 
   if (held.slot) setSlot(inv, ref, null);
   const freed: Held[] = [];
@@ -77,6 +92,7 @@ export function equipGear(
   };
   free(slot);
   if (twoHanded) free(OFF);
+  if (slot === MAIN && def.wield && !dual && isWeapon(equipped(inv).get(OFF))) free(OFF);
   if (slot === OFF) {
     const main = equipped(inv).get(MAIN);
     if (main && catalog.get(main.item)!.wield?.hands === 2) free(MAIN);
@@ -84,9 +100,15 @@ export function equipGear(
   setSlot(inv, ref, slot);
   inv.known.add(held.item);
 
+  // The basic move; held as a second weapon beside a main-hand weapon, also its dual move.
   let learned: string | null = null;
-  const grants = def.wield?.grantsMove ?? null;
-  if (grants && !progress.moves.has(grants)) {
+  const hands = equipped(inv);
+  const wieldOf = (s: string) => catalog.get(hands.get(s)?.item ?? '')?.wield;
+  const off = wieldOf(OFF);
+  const second = wieldOf(MAIN) && off && !off.offHandOnly ? off.offGrantsMove : null;
+  const shieldMove = def.wield?.offHandOnly ? def.wield.offGrantsMove : null; // an off-hand-only item may teach two
+  for (const grants of [def.wield?.grantsMove, shieldMove, second]) {
+    if (!grants || progress.moves.has(grants)) continue;
     progress.moves.set(grants, { level: 1, exp: 0 });
     learned = grants;
   }

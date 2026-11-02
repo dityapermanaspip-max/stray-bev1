@@ -3,15 +3,19 @@ import { loadBalance } from '../config/balance.ts';
 import { loadLinePicker } from '../presentation/line_picker.ts';
 import type { CoreStats } from '../stats/derived.ts';
 import type { BattleData } from '../battle/types.ts';
+import type { UnlockRule } from '../growth/unlocks.ts';
 import { loadMoves, loadStatuses, loadUnlocks } from './move_repo.ts';
 
 // Species and races for building combatants, plus the full battle data bundle.
 
 export type SpeciesDef = {
   name: string;
-  baseStats: CoreStats;
+  baseStats: CoreStats; // reference only: regular creatures are rolled per ring (world/creature_roll.ts)
+  mainStats: string[];
   bodyParts: string[];
   moves: string[];
+  corruptedMoves?: string[]; // pool moves only a corrupted one may roll
+  unlocks?: UnlockRule[]; // unlock rules of pool moves: a rolled creature only gets a move once its rules pass
   resist: Map<string, number>;
   onExpiry: 'devour' | 'ignore';
 };
@@ -33,24 +37,37 @@ async function loadResistances(pool: pg.Pool, ownerKind: string): Promise<Map<st
 }
 
 export async function loadSpecies(pool: pg.Pool): Promise<Map<string, SpeciesDef>> {
-  const [species, moves, resist] = await Promise.all([
-    pool.query('SELECT id, species_name, base_stats, body_parts, on_expiry FROM entity.species'),
+  const [species, moves, resist, unlocks] = await Promise.all([
+    pool.query('SELECT id, species_name, base_stats, main_stats, body_parts, on_expiry, variant_of FROM entity.species'),
     pool.query(
-      `SELECT sm.species_id, m.move_name FROM entity.species_moves sm
+      `SELECT sm.species_id, m.move_name, sm.corrupted_only FROM entity.species_moves sm
        JOIN moves.moves m ON m.id = sm.move_id ORDER BY m.move_name`,
     ),
     loadResistances(pool, 'species'),
+    loadUnlocks(pool),
   ]);
   const result = new Map<string, SpeciesDef>();
+  // A variant takes what it leaves empty (move pool, main stats, body parts) from the species it is a variant of.
+  const byId = new Map(species.rows.map((s) => [s.id, s]));
+  const pool_ = (id: string, corrupted = false) =>
+    moves.rows.filter((m) => m.species_id === id && m.corrupted_only === corrupted).map((m) => m.move_name);
+  const own = <T>(mine: T[] | null, base: T[] | undefined) => (mine && mine.length > 0 ? mine : base ?? []);
   for (const s of species.rows) {
+    const base = s.variant_of ? byId.get(s.variant_of) : undefined;
     result.set(s.species_name, {
       name: s.species_name,
       baseStats: s.base_stats,
-      bodyParts: s.body_parts,
-      moves: moves.rows.filter((m) => m.species_id === s.id).map((m) => m.move_name),
+      mainStats: own(s.main_stats, base?.main_stats),
+      bodyParts: own(s.body_parts, base?.body_parts),
+      moves: own(pool_(s.id), base ? pool_(base.id) : undefined),
+      corruptedMoves: own(pool_(s.id, true), base ? pool_(base.id, true) : undefined),
       resist: resist.get(s.id) ?? new Map(),
       onExpiry: s.on_expiry,
     });
+  }
+  for (const def of result.values()) {
+    const all = [...def.moves, ...(def.corruptedMoves ?? [])];
+    def.unlocks = unlocks.filter((u) => all.includes(u.move));
   }
   return result;
 }

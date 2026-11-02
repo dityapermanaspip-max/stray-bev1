@@ -7,7 +7,7 @@ import { cfg } from '../fixtures/battle_data.ts';
 const e = cfg.economy;
 const item = (over: Partial<ItemDef>): ItemDef => ({
   name: 'x', type: 'food', shape: null, material: null, weight: 1, maxDurability: null, defaultQuality: 'common', stack: true,
-  value: 3, goods: [], taboo: false, edible: true, rotsTo: null, toolType: null, meal: null, carcassOf: null, wield: null, worn: null, effects: [], ...over,
+  value: 3, goods: [], taboo: false, edible: true, rotsTo: null, toolType: null, ammoType: null, meal: null, carcassOf: null, wield: null, worn: null, effects: [], ...over,
 });
 const meat = item({ name: 'chicken_meat', goods: ['chicken'] });
 const sword = item({ name: 'iron_sword', type: 'weapon', value: 120, stack: false });
@@ -45,4 +45,14 @@ test('craft fee is half the value added, at least one copper; coins and worthles
   assert.equal(tradeable(e, item({ type: 'coin', value: 1 })), false);
   assert.equal(tradeable(e, item({ value: 0 })), false);
   assert.equal(tradeable(e, meat), true);
+});
+
+test('a town taboo refuses item types, shapes and goods families (elves: meat and carcasses)', () => {
+  const meat = item({ type: 'food', shape: 'meat', goods: ['chicken'] });
+  const carcass = item({ type: 'carcass', shape: 'carcass', goods: ['chicken'] });
+  const herb = item({ type: 'food', shape: 'herb', goods: [] });
+  const elf = ['meat', 'carcass'];
+  assert.deepEqual([meat, carcass, herb].map((x) => tradeable(e, x, elf)), [false, false, true]);
+  assert.equal(tradeable(e, meat), true);
+  assert.equal(tradeable(e, meat, ['chicken']), false);
 });

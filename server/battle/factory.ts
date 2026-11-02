@@ -1,8 +1,9 @@
 import type { BalanceConfig } from '../config/balance.ts';
 import type { Progress } from '../growth/level_up.ts';
 import { calcDerived, STATS, type CoreStats } from '../stats/derived.ts';
+import { rowOf } from './formation.ts';
 import { bodyTier } from './rules.ts';
-import type { BattleEntity, CombatGear, EntityKind, Row, Side } from './types.ts';
+import type { BattleEntity, CombatGear, EntityKind, Side } from './types.ts';
 
 // Builds battle entities. Everyone (players, creatures, NPCs, bosses) uses this shape.
 
@@ -10,7 +11,7 @@ export type CombatantSetup = {
   id: string;
   kind: EntityKind;
   side: Side;
-  row: Row;
+  slot: number; // battle formation slot; the row follows
   speaker: string | null;
   grows: boolean;
   corrupted: boolean;
@@ -26,9 +27,16 @@ export type CombatantSetup = {
 
 // No gear: bare hands, no armor.
 export const emptyGear = (): CombatGear => ({
-  weaponType: null, weapon: null, punchPower: 0, kickPower: 0, defense: 0, coverage: {},
-  armorPieces: [], statAdd: {}, triggers: [], wear: new Map(), thrownSpent: 0,
+  weaponType: null, weapon: null, offHandType: null, offHand: null, punchPower: 0, kickPower: 0, defense: 0, coverage: {},
+  armorPieces: [], statAdd: {}, triggers: [], wear: new Map(), thrownSpent: 0, ammo: [], ammoSpent: new Map(),
 });
+
+// Ammo the bag holds, by type (all arrows count, whatever the stack).
+const ammoTotals = (gear: CombatGear): [string, number][] => {
+  const out = new Map<string, number>();
+  for (const a of gear.ammo) out.set(a.type, (out.get(a.type) ?? 0) + a.qty);
+  return [...out];
+};
 
 export function createEntity(cfg: BalanceConfig, s: CombatantSetup): BattleEntity {
   const derived = calcDerived(s.stats, cfg.derived);
@@ -37,7 +45,8 @@ export function createEntity(cfg: BalanceConfig, s: CombatantSetup): BattleEntit
     id: s.id,
     kind: s.kind,
     side: s.side,
-    row: s.row,
+    slot: s.slot,
+    row: rowOf(cfg.formation, s.slot),
     speaker: s.speaker,
     grows: s.grows,
     corrupted: s.corrupted,
@@ -46,7 +55,7 @@ export function createEntity(cfg: BalanceConfig, s: CombatantSetup): BattleEntit
     derived,
     bodyParts: [...s.bodyParts],
     weaponType: s.weaponType ?? gear.weaponType,
-    ammo: new Map(s.ammo ?? []),
+    ammo: new Map(s.ammo ?? ammoTotals(gear)),
     gear,
     moves: s.moves.map((m) => m.name),
     moveLevels: new Map(s.moves.map((m) => [m.name, m.level])),

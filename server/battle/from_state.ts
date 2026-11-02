@@ -4,7 +4,7 @@ import { progressStats, type Progress } from '../growth/level_up.ts';
 import { equippedMoves, type Loadout } from '../loadout/loadout.ts';
 import { createEntity } from './factory.ts';
 import { bodyTier } from './rules.ts';
-import type { BattleEntity, CombatGear, Row, Side } from './types.ts';
+import type { BattleEntity, CombatGear, Side } from './types.ts';
 
 // Turns a saved, growing entity into a combatant. Only equipped moves come into battle.
 
@@ -12,7 +12,7 @@ export type GrowerSetup = {
   id: string;
   kind: BattleEntity['kind'];
   side: Side;
-  row: Row;
+  slot: number;
   speaker: string;
   controller: 'ai' | 'player';
   progress: Progress;
@@ -27,7 +27,7 @@ export function growerEntity(cfg: BalanceConfig, s: GrowerSetup): BattleEntity {
     id: s.id,
     kind: s.kind,
     side: s.side,
-    row: s.row,
+    slot: s.slot,
     speaker: s.speaker,
     grows: true,
     corrupted: false,

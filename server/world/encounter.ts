@@ -7,7 +7,11 @@ import type { PopRow } from './population.ts';
 // lowered by the party leader's luck. Busier fields also send bigger groups. Nothing here reaches the client
 // except the creatures met.
 
-export type Foe = { species: string; corrupted: boolean };
+// slot: set by authored encounters, else front first. vice: a named vice (an entity, not a count; species is 'vice').
+// boss: the round's boss (species 'boss'), with this fight's weakening share and the keys spent to reach it.
+export type Foe = {
+  species: string; corrupted: boolean; slot?: number; vice?: { id: string; type: string }; boss?: { id: string; weaken: number; keys: string[] };
+};
 
 export function density(rows: PopRow[]): number {
   const max = rows.reduce((s, r) => s + r.max, 0);

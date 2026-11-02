@@ -38,6 +38,7 @@ export type StatusPanel = {
     slots: { slot: string; item: string | null }[];
     items: { ref: string; item: string; name: string; qty: number; slot: string | null; wearable: boolean; edible: boolean; condition: number | null; freshness: Word | null }[];
   } | null;
+  formation: { slot: number; front: number; back: number }; // own battle slot: 1..front is the front row, then the back row
   canSwap: boolean; // inside a town's safe square (or the testing flag)
   line: string | null; // a refusal or a remark after the last change
 };
@@ -45,4 +46,5 @@ export type StatusPanel = {
 // Client -> server requests (answered with StatusPanel). move null empties the slot.
 export type LoadoutRequest = { slot: number; move: string | null };
 export type GearRequest = { wear: string; slot?: string } | { remove: string }; // wear: a bag ref; remove: a gear slot
+export type FormationRequest = { slot: number }; // a battle slot; town only, like loadout changes
 export type EatRequest = { ref: string }; // a bag ref; answered with StatusPanel (its line says how it went)

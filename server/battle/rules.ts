@@ -14,6 +14,8 @@ export function meetsRequirements(e: BattleEntity, move: MoveDef): boolean {
         return e.bodyParts.includes(r.value) && !e.effects.some((f) => f.kind === 'disable_part' && f.part === r.value);
       case 'weapon_type':
         return e.weaponType === r.value;
+      case 'off_hand_type':
+        return e.gear.offHandType === r.value;
       case 'ammo_type':
         return (e.ammo.get(r.value) ?? 0) > 0;
       case 'stat_min':
@@ -51,9 +53,12 @@ export function magicStaminaCost(cfg: BalanceConfig, manaCost: number): number {
   return manaCost * cfg.combat.magicStaminaShare;
 }
 
-// Entities a move may target. Melee ('front') hits the front row,
-// or the back row only when the front row is empty.
+// Entities a move may target. Melee ('front') hits the front row, or the back row only when the front row is
+// empty, and cannot be used from behind a living front row. Ranged and magic ('any') reach every slot. A reach move
+// ('reach', the spear) reaches both enemy rows from either row, but from behind a living front row it may strike an
+// ally standing in front instead (strayTarget). Both sides alike.
 export function validTargets(all: BattleEntity[], actor: BattleEntity, move: MoveDef): BattleEntity[] {
+  if (move.rowRule === 'front' && move.target !== 'self' && isBehind(all, actor)) return [];
   const alive = all.filter(isAlive);
   const allies = alive.filter((e) => e.side === actor.side);
   const enemies = alive.filter((e) => e.side !== actor.side);
@@ -76,6 +81,14 @@ export function validTargets(all: BattleEntity[], actor: BattleEntity, move: Mov
   }
 }
 
+// A reach move used from behind a living front row: each target may become a living front-row ally of the user
+// (chance combat.reach_stray_chance). Anything else keeps its targets.
+export function strayTargets(cfg: BalanceConfig, rng: () => number, all: BattleEntity[], actor: BattleEntity, move: MoveDef, targets: BattleEntity[]): BattleEntity[] {
+  if (move.rowRule !== 'reach' || !isBehind(all, actor)) return targets;
+  const front = all.filter((o) => o.side === actor.side && o.row === 'front' && isAlive(o));
+  return [...new Set(targets.map((t) => (rng() < cfg.combat.reachStrayChance ? front[Math.floor(rng() * front.length)] : t)))];
+}
+
 // Expands the chosen target into everyone the move hits.
 export function expandTargets(all: BattleEntity[], actor: BattleEntity, move: MoveDef, chosen: BattleEntity): BattleEntity[] {
   const valid = validTargets(all, actor, move);
@@ -94,3 +107,8 @@ export function bodyTier(cfg: BalanceConfig, resource: BodyResource, current: nu
   const frac = max <= 0 ? 0 : Math.max(0, current) / max;
   return Math.max(1, cfg.bodyTiers[resource].filter((start) => frac >= start).length);
 }
+
+// In the back row with someone of its own side still standing in front. With the front row empty (fallen, or a
+// lone fighter knocked back), the back row fights at the front without changing slot.
+export const isBehind = (all: BattleEntity[], e: BattleEntity) =>
+  e.row === 'back' && all.some((o) => o.side === e.side && o.row === 'front' && isAlive(o));

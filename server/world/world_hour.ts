@@ -15,7 +15,7 @@ import { townTick, type AreaHex, type TickReport } from './town_tick.ts';
 
 export type TickWorld = { cfg: BalanceConfig; catalog: ItemCatalog; loot: LootData; recipes: Recipe[]; biomes: Map<string, Biome>; rng: Rng };
 export type HexInfo = { id: string; q: number; r: number; ring: number; biome: string | null };
-export type TickTown = { town: Town; population: number; jobs: Record<string, number> }; // jobs: job -> workforce share
+export type TickTown = { town: Town; hex: string; population: number; jobs: Record<string, number> }; // hex: where it stands; jobs: job -> workforce share
 
 export const hexDistance = (a: Pick<HexInfo, 'q' | 'r'>, b: Pick<HexInfo, 'q' | 'r'>) => (Math.abs(a.q - b.q) + Math.abs(a.r - b.r) + Math.abs(a.q + a.r - b.q - b.r)) / 2;
 
@@ -42,8 +42,8 @@ export function runHour(w: TickWorld, hexes: HexInfo[], pop: Map<string, PopRow[
   }
   const reports = new Map<string, TickReport>();
   if (!townDue(w, hour)) return reports;
-  for (const { town, population, jobs } of towns) {
-    const home = hexes.find((h) => h.id === town.ref);
+  for (const { town, hex, population, jobs } of towns) {
+    const home = hexes.find((h) => h.id === hex);
     if (!home) continue;
     const area: AreaHex[] = hexes
       .filter((h) => hexDistance(home, h) <= w.cfg.townTick.reach)

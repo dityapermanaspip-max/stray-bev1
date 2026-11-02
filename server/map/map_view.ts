@@ -41,7 +41,8 @@ export async function mapView(world: GameWorld, entityId: string, ref: string): 
     return { q: h.q, r: h.r, seen: s, biome: s === 'fog' ? null : h.biome, name: s === 'fog' ? null : name(h.biome), town: s === 'visited' ? h.town : null };
   });
   const point = (id: string): MapPoint => { const h = world.links.hexes.get(id)!; return { q: h.q, r: h.r }; };
-  const here = world.links.hexes.has(ref) ? point(ref) : null;
+  const hexRef = world.links.towns.get(ref) ?? ref; // inside a town: its hex
+  const here = world.links.hexes.has(hexRef) ? point(hexRef) : null;
   const between = border
     ? { from: point(border.a.id), to: point(border.b.id), step: border.corridors.indexOf(ref) + 1, steps: border.corridors.length }
     : null;

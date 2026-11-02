@@ -65,7 +65,7 @@ function build(world: LabWorld, f: LabFighter, id: string, side: Side): Built {
   const stats = Object.fromEntries(STATS.map((s) => [s, clamp(f.stats?.[s], 0, LIMITS.stat, 5)])) as LabFighter['stats'];
   const moves = f.moves.map((m) => ({ name: m.name, level: clamp(m.level, 1, cfg.moveLevelCap, 1) }));
   const equipped = f.moves.filter((m) => m.equipped).map((m) => m.name);
-  const row = f.row === 'back' ? 'back' : 'front';
+  const slot = f.slot && f.slot >= 1 && f.slot <= cfg.formation.front + cfg.formation.back ? Math.round(f.slot) : f.row === 'back' ? cfg.formation.front + 1 : 1;
   const progress = createProgress(stats, moves);
   const { inventory } = labInventory(cfg, world.catalog, f, progress, id);
   const gear = buildCombatGear(cfg, world.catalog, inventory);
@@ -73,7 +73,7 @@ function build(world: LabWorld, f: LabFighter, id: string, side: Side): Built {
   if (f.source === 'human') {
     const loadout = new Map(equipped.map((name, i) => [i + 1, name]));
     const entity = growerEntity(cfg, {
-      id, kind: 'player', side, row, speaker: side === 'party' ? 'self' : 'generic', controller: 'ai',
+      id, kind: 'player', side, slot, speaker: side === 'party' ? 'self' : 'generic', controller: 'ai',
       progress, loadout, bodyParts: world.races.get('human')?.bodyParts ?? [], body: null, gear,
     });
     return { entity, progress, inventory };
@@ -81,7 +81,7 @@ function build(world: LabWorld, f: LabFighter, id: string, side: Side): Built {
   const def = world.species.get(f.species!)!;
   const levels = new Map(moves.map((m) => [m.name, m.level]));
   const entity = createEntity(cfg, {
-    id, kind: 'native', side, row, speaker: null, grows: false, corrupted: !!f.corrupted, controller: 'ai',
+    id, kind: 'native', side, slot, speaker: null, grows: false, corrupted: !!f.corrupted, controller: 'ai',
     stats, bodyParts: def.bodyParts, resist: def.resist, gear,
     moves: equipped.map((name) => ({ name, level: levels.get(name) ?? 1 })),
   });

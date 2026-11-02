@@ -1,3 +1,4 @@
+import { hasTraitFlag } from '../growth/traits.ts';
 import type pg from 'pg';
 import type { BalanceConfig } from '../config/balance.ts';
 import type { EntityState } from '../data/entity_load.ts';
@@ -49,7 +50,7 @@ export async function applyGearArgs(
     const [item, slot] = pair.split(':');
     const ref = refFor(inv, item);
     if (!ref) throw new Error(`wear ${item} refused: not_held`);
-    const change = equipGear(cfg, catalog, inv, state.progress, ref, PLACE, slot ?? null);
+    const change = equipGear(cfg, catalog, inv, state.progress, ref, PLACE, slot ?? null, hasTraitFlag(state.traits, 'dual_wield'));
     if (typeof change === 'string') throw new Error(`wear ${item} refused: ${change}`);
     say(equipLineKey(change.kind));
     if (change.learned) {

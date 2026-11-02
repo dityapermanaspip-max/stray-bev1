@@ -8,15 +8,17 @@ import type { Progress } from '../growth/level_up.ts';
 import { starterLoadout } from '../loadout/loadout.ts';
 import type { CoreStats } from '../stats/derived.ts';
 import { buildCreature, buildPlayer } from './combatants.ts';
+import { createRng } from '../util/rng.ts';
 
 // Headless battle runner (developer tool, server side only).
-// npm run sim -- --enemies chicken,cat --seed 7 [--corrupted] [--debug]
+// npm run sim -- --enemies chicken,cat --seed 7 [--ring 3] [--corrupted] [--debug]   (ring: default the outer one)
 
 const { values } = parseArgs({
   options: {
     enemies: { type: 'string', default: 'chicken' },
     seed: { type: 'string', default: '1' },
     corrupted: { type: 'boolean', default: false },
+    ring: { type: 'string' },
     'max-seconds': { type: 'string', default: '600' },
     debug: { type: 'boolean', default: false },
   },
@@ -31,10 +33,11 @@ try {
   const playerMoves = cfg.playerStartMoves.map((name) => ({ name, level: 1 }));
   const playerProgress = createProgress(cfg.playerStartStats as CoreStats, playerMoves);
   const entities: BattleEntity[] = [buildPlayer(cfg, playerProgress, starterLoadout(cfg, cfg.playerStartMoves), races.get('human')?.bodyParts ?? [])];
+  const roll = createRng(Number(values.seed) + 1);
   values.enemies!.split(',').forEach((name, i) => {
     const def = species.get(name.trim());
     if (!def) throw new Error(`unknown species ${name}`);
-    entities.push(buildCreature(cfg, def, i + 1, values.corrupted!));
+    entities.push(buildCreature(cfg, def, i + 1, values.corrupted!, Number(values.ring ?? cfg.rings.count), roll));
   });
 
   const progress = new Map<string, Progress>([['player', playerProgress]]);
@@ -99,6 +102,8 @@ function print(data: BattleData, clock: number, e: BattleEvent): void {
       return console.log(`${t}   ${e.entity} learns ${moveName(data, e.move)}`);
     case 'downed':
       return console.log(`${t}   ${e.entity} goes down`);
+    case 'moved':
+      return console.log(`${t}   ${e.entity} is pushed to slot ${e.slot} (${e.row} row)`);
     case 'end':
       return console.log(`${t} battle over, winner: ${e.winner}`);
   }

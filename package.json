@@ -20,7 +20,11 @@
     "play": "node --env-file=.env server/sim/play.ts",
     "admin": "node --env-file=.env server/admin/server.ts",
     "game": "node --env-file=.env server/game/server.ts",
-    "world:new": "node --env-file=.env server/worldgen/new_world.ts"
+    "world:new": "node --env-file=.env server/worldgen/new_world.ts",
+    "world:dev": "node --env-file=.env server/worldgen/dev_world.ts",
+    "world:roster": "node --env-file=.env server/sim/roster.ts",
+    "world:ticks": "node --env-file=.env server/admin/world/run_ticks.ts",
+    "dev:veteran": "node --env-file=.env server/sim/veteran.ts"
   },
   "dependencies": {
     "@colyseus/core": "0.18.19",

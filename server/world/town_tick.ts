@@ -47,7 +47,7 @@ function rowOf(town: Town, item: string, quality: string): StockRow {
 // Adds goods the town keeps (traded, not taboo). Answers how many were kept.
 function bringIn(t: TickInput, item: string, qty: number): number {
   const def = t.catalog.get(item);
-  if (!def || qty <= 0 || !tradeable(t.cfg.economy, def)) return 0;
+  if (!def || qty <= 0 || !tradeable(t.cfg.economy, def, t.town.taboo)) return 0;
   rowOf(t.town, item, def.defaultQuality).qty += qty;
   return qty;
 }
@@ -56,7 +56,7 @@ function consume(t: TickInput, r: TickReport): void {
   const { economy, townTick } = t.cfg;
   const rows = [...t.town.stock.values()].filter((row) => {
     const def = t.catalog.get(row.item);
-    return row.qty > 0 && !!def && tradeable(economy, def);
+    return row.qty > 0 && !!def && tradeable(economy, def, t.town.taboo);
   });
   const typeOf = (row: StockRow) => t.catalog.get(row.item)!.type;
   const ofType = new Map<string, number>();
@@ -116,7 +116,7 @@ function craft(t: TickInput, job: string, workers: number, r: TickReport): void 
   };
   const fill = (item: string) => {
     const def = t.catalog.get(item);
-    return def && tradeable(economy, def) ? held(t.town, item) / capacityOf(economy, def, t.town.specialties) : Infinity;
+    return def && tradeable(economy, def, t.town.taboo) ? held(t.town, item) / capacityOf(economy, def, t.town.specialties) : Infinity;
   };
   const level = facilityLevel(t.town, job);
   for (let b = chanceRound(t.rng, workers * t.cfg.townTick.craft.perWorker); b > 0; b--) {

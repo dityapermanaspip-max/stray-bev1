@@ -5,11 +5,22 @@ import { loadFieldData } from '../data/field_repo.ts';
 import { loadLoot } from '../data/loot_repo.ts';
 import { loadBattleData, loadRaces, loadSpecies } from '../data/species_repo.ts';
 import { createPool } from '../db/pool.ts';
+import { createRng } from '../util/rng.ts';
+import { rollCreature } from '../world/creature_roll.ts';
 import { runSession } from '../sim/session_run.ts';
 import { buildCatalog, playerFighter } from './catalog.ts';
 import { runLabBattle, validateLab, type LabWorld } from './lab_battle.ts';
 import { fieldCatalog, previewField } from './lab_field.ts';
+import { inspectHex } from './world/hex_inspect.ts';
+import { runTicks } from './world/run_ticks.ts';
+import { entityRoute } from './entity/routes.ts';
+import { itemRoute } from './item/routes.ts';
 import { butcherPreview } from './lab_loot.ts';
+import { aiBalanceMob, aiBalanceMove, aiDraft, aiMob, aiReady, type AiBalanceRequest, type AiMobRequest, type AiRequest } from './gemini.ts';
+import { blankMob, exportMob, mobReference, type MobDraft } from './mob_draft.ts';
+import { saveMob } from './mob_save.ts';
+import { blankDraft, exportMove, moveReference, type MoveDraft } from './move_draft.ts';
+import { saveMove } from './move_save.ts';
 import type { LabBattleRequest, LabButcherRequest, LabFieldRequest, LabSessionRequest } from './lab_types.ts';
 
 // Admin battle lab API. Dev only: localhost, token header, off unless ADMIN_ENABLED=true outside production.
@@ -72,6 +83,13 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse): Promi
     const id = url.searchParams.get('id') ?? '';
     return send(res, 200, await playerFighter(pool, id));
   }
+  const entity = await entityRoute(pool, req.method ?? 'GET', path, url.searchParams, () => readJson(req));
+  if (entity) return send(res, entity.status, entity.body);
+  const item = await itemRoute(pool, req.method ?? 'GET', path, url.searchParams, () => readJson(req));
+  if (item) {
+    if (req.method === 'POST' && item.status === 200) world = await loadWorld(); // the lab sees item, loot and recipe edits at once
+    return send(res, item.status, item.body);
+  }
   if (req.method === 'POST' && path === '/reload') {
     world = await loadWorld();
     return send(res, 200, { ok: true });
@@ -82,10 +100,52 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse): Promi
     if (problem) return send(res, 400, { error: problem });
     return send(res, 200, runLabBattle(world, body));
   }
+  // Move builder: reference names, an existing move as a draft, check or save (?mode=update edits it), AI fill and balance.
+  if (req.method === 'GET' && path === '/move-ref') return send(res, 200, { ...(await moveReference(pool)), blank: blankDraft(), ai: aiReady() });
+  if (req.method === 'GET' && path === '/move') {
+    const draft = await exportMove(pool, url.searchParams.get('name') ?? '');
+    return draft ? send(res, 200, draft) : send(res, 404, { error: 'unknown move' });
+  }
+  if (req.method === 'POST' && (path === '/move/check' || path === '/move/save')) {
+    const result = await saveMove(pool, await readJson<MoveDraft>(req), path === '/move/save', url.searchParams.get('mode') === 'update');
+    if (result.saved) world = await loadWorld(); // the battle lab sees it at once
+    return send(res, 200, result);
+  }
+  if (req.method === 'POST' && path === '/move/ai') return send(res, 200, await aiDraft(pool, await readJson<AiRequest>(req)));
+  if (req.method === 'POST' && path === '/move/balance') return send(res, 200, await aiBalanceMove(pool, await readJson<AiBalanceRequest<MoveDraft>>(req)));
+  // Creature builder: the same shape of routes for species.
+  if (req.method === 'GET' && path === '/mob-ref') return send(res, 200, { ...(await mobReference(pool)), blank: blankMob(), ai: aiReady() });
+  if (req.method === 'GET' && path === '/mob') {
+    const draft = await exportMob(pool, url.searchParams.get('name') ?? '');
+    return draft ? send(res, 200, draft) : send(res, 404, { error: 'unknown creature' });
+  }
+  if (req.method === 'POST' && (path === '/mob/check' || path === '/mob/save')) {
+    const result = await saveMob(pool, await readJson<MobDraft>(req), path === '/mob/save', url.searchParams.get('mode') === 'update');
+    if (result.saved) world = await loadWorld();
+    return send(res, 200, result);
+  }
+  if (req.method === 'GET' && path === '/mob/roll') { // five sample creatures as encounters would roll them
+    const def = world.species.get(url.searchParams.get('name') ?? '');
+    if (!def) return send(res, 404, { error: 'unknown creature (save it first)' });
+    const ring = Number(url.searchParams.get('ring')) || world.data.cfg.rings.count;
+    const rng = createRng(Date.now() >>> 0);
+    return send(res, 200, Array.from({ length: 5 }, () => rollCreature(world.data.cfg, def, ring, url.searchParams.get('corrupted') === '1', rng)));
+  }
+  if (req.method === 'POST' && path === '/mob/ai') return send(res, 200, await aiMob(pool, await readJson<AiMobRequest>(req)));
+  if (req.method === 'POST' && path === '/mob/balance') return send(res, 200, await aiBalanceMob(pool, await readJson<AiBalanceRequest<MobDraft>>(req)));
   if (req.method === 'GET' && path === '/fields') return send(res, 200, await fieldCatalog(pool, world.fields));
   if (req.method === 'POST' && path === '/field') {
     const result = await previewField(pool, world.fields, await readJson<LabFieldRequest>(req));
     return typeof result === 'string' ? send(res, 400, { error: result }) : send(res, 200, result);
+  }
+  if (req.method === 'GET' && path === '/hex') {
+    const result = await inspectHex(pool, world, url.searchParams.get('ref') ?? '');
+    return typeof result === 'string' ? send(res, 400, { error: result }) : send(res, 200, result);
+  }
+  if (req.method === 'POST' && path === '/ticks') { // run N world hours now (admin/world/run_ticks.ts)
+    const hours = Number(url.searchParams.get('hours'));
+    if (!Number.isInteger(hours) || hours < 1 || hours > 24 * 365) return send(res, 400, { error: 'hours must be 1 to 8760' });
+    return send(res, 200, await runTicks(pool, hours));
   }
   if (req.method === 'POST' && path === '/butcher') {
     const result = butcherPreview(world, await readJson<LabButcherRequest>(req));

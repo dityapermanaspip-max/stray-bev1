@@ -5,6 +5,8 @@ import type { BattleEntity } from '../battle/types.ts';
 import type { SpeciesDef } from '../data/species_repo.ts';
 import type { Progress } from '../growth/level_up.ts';
 import type { Loadout } from '../loadout/loadout.ts';
+import type { Rng } from '../util/rng.ts';
+import { rollCreature } from '../world/creature_roll.ts';
 
 // Builds the sim's player and creatures. Server-side developer tooling.
 
@@ -13,7 +15,7 @@ export function buildPlayer(cfg: BalanceConfig, progress: Progress, loadout: Loa
     id: 'player',
     kind: 'player',
     side: 'party',
-    row: 'front',
+    slot: 1,
     speaker: 'self',
     controller: 'ai',
     progress,
@@ -23,19 +25,21 @@ export function buildPlayer(cfg: BalanceConfig, progress: Progress, loadout: Loa
   });
 }
 
-export function buildCreature(cfg: BalanceConfig, def: SpeciesDef, index: number, corrupted: boolean): BattleEntity {
+// A regular creature rolled for the ring it is met in (stats and learned move levels differ every time).
+export function buildCreature(cfg: BalanceConfig, def: SpeciesDef, index: number, corrupted: boolean, ring: number, rng: Rng, slot = index): BattleEntity {
+  const rolled = rollCreature(cfg, def, ring, corrupted, rng);
   return createEntity(cfg, {
     id: `${def.name}_${index}`,
     kind: 'native',
     side: 'enemy',
-    row: 'front',
+    slot,
     speaker: null,
     grows: false,
     corrupted,
     controller: 'ai',
-    stats: def.baseStats,
+    stats: rolled.stats,
     bodyParts: def.bodyParts,
-    moves: def.moves.map((m) => ({ name: m, level: 1 })),
+    moves: rolled.moves.filter((m) => m.equipped).map(({ name, level }) => ({ name, level })),
     resist: def.resist,
   });
 }

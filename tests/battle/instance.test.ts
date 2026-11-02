@@ -23,7 +23,7 @@ function run(inst: BattleInstance, ms: number): BattleEvent[] {
 }
 
 test('melee cannot reach the back row while the front row stands', () => {
-  const back = fighter('back', 'enemy', { row: 'back' });
+  const back = fighter('back', 'enemy', { slot: 5 });
   const { inst } = battle([fighter('p', 'party'), fighter('front', 'enemy'), back]);
   assert.equal(inst.submit('p', 'punch', 'back'), 'bad_target');
   assert.equal(inst.submit('p', 'punch', 'front'), null);
@@ -42,7 +42,7 @@ test('the faster entity acts first and the battle ends with a winner', () => {
 
 test('damage interrupts a channel on another ally; delivered ticks stay', () => {
   const healer = fighter('healer', 'party', { stats: solid, moves: [{ name: 'bandage', level: 1 }] });
-  const ally = fighter('ally', 'party', { row: 'back', stats: solid });
+  const ally = fighter('ally', 'party', { slot: 5, stats: solid });
   ally.hp = 10;
   const enemy = fighter('enemy', 'enemy', { stats: sure });
   const { inst } = battle([healer, ally, enemy]);

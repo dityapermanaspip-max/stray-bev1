@@ -1,3 +1,6 @@
+import { randomInt } from 'node:crypto';
+import { loadRecruitData, rollSummoner } from '../recruit/recruit_repo.ts';
+import { createRng } from '../util/rng.ts';
 import type pg from 'pg';
 import type { BattleData } from '../battle/types.ts';
 import { findEntityByName, loadEntityState } from '../data/entity_load.ts';
@@ -60,7 +63,7 @@ export async function gridFor(world: GameWorld, ref: string): Promise<{ grid: Fi
   if (!spec) return null;
   const grid = generateField(spec);
   const near = Object.fromEntries(Object.entries(world.data.cfg.gather.kinds).map(([k, v]) => [k, v.near]));
-  grid.nodes = placeNodes(grid, spec, near).filter((n) => world.data.cfg.gather.kinds[n.kind]); // only kinds in config
+  grid.nodes = placeNodes(grid, spec, near, (k) => !!world.data.cfg.gather.kinds[k]); // only kinds in config
   const entry = { grid, kind: spec.template.kind };
   world.grids.set(ref, entry);
   return entry;
@@ -75,8 +78,9 @@ export function fieldView(ref: string, kind: FieldKind, g: FieldGrid): FieldView
   };
 }
 
-// A field of the round being played (hex or corridor).
-export const inRound = (world: GameWorld, ref: string) => world.links.hexes.has(ref) || world.links.borders.some((b) => b.corridors.includes(ref));
+// A field of the round being played (hex, town or corridor).
+export const inRound = (world: GameWorld, ref: string) =>
+  world.links.hexes.has(ref) || world.links.towns.has(ref) || world.links.borders.some((b) => b.corridors.includes(ref));
 
 // Where a stray is summoned: the first corridor out of a town on the outermost ring that has towns, at its exit
 // into the town. Which way they walk first is their destiny. Without such a corridor: the hex nearest the centre.
@@ -105,6 +109,10 @@ async function newPlayer(world: GameWorld, name: string): Promise<string> {
   const inv = await loadInventory(world.pool, id);
   addCoins(cfg, world.catalog, inv, cfg.town.startCopper);
   await saveBag(world.pool, id, inv);
+  // Their summoner is rolled now, somewhere in the world; whether they ever meet is another story.
+  const recruits = await loadRecruitData(world.pool);
+  await rollSummoner({ pool: world.pool, cfg, catalog: world.catalog, unlocks: world.data.unlocks, roundId: world.roundId, ...recruits },
+    id, createRng(randomInt(2 ** 31)));
   return id;
 }
 

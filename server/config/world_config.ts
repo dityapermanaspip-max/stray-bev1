@@ -36,28 +36,63 @@ const stepsIn = (rings: RingConfig, ring: number) => Math.max(0, rings.count - M
 export const conversionRate = (rings: RingConfig, outerRate: number, ring: number) => outerRate + rings.conversionPerRing * stepsIn(rings, ring);
 
 // A wild hex's starting counts for one species (world generation, Step 4): natives and corrupted rolled in their ranges.
-export function startCounts(rings: RingConfig, max: number, rng: () => number): { natives: number; corrupted: number } {
+// A species born corrupted has no natives: the whole head count starts corrupted.
+export function startCounts(rings: RingConfig, max: number, rng: () => number, bornCorrupted = false): { natives: number; corrupted: number } {
   const pick = ([lo, hi]: [number, number]) => Math.round(max * (lo + rng() * (hi - lo)));
-  return { natives: pick(rings.start.natives), corrupted: pick(rings.start.corrupted) };
+  const natives = pick(rings.start.natives);
+  const corrupted = pick(rings.start.corrupted);
+  return bornCorrupted ? { natives: 0, corrupted: natives + corrupted } : { natives, corrupted };
 }
 
-// Species whose total core stats fall outside the band of a ring they live in.
-export function findRingProblems(rings: RingConfig, species: { name: string; total: number; ringMin: number; ringMax: number }[]): string[] {
-  const out: string[] = [];
-  for (const s of species) {
-    if (s.ringMin < 1 || s.ringMax > rings.count || s.ringMin > s.ringMax) out.push(`species ${s.name}: rings ${s.ringMin}-${s.ringMax} outside 1-${rings.count}`);
-    for (let ring = Math.max(1, s.ringMin); ring <= Math.min(rings.count, s.ringMax); ring++) {
-      const band = rings.creatureTotal.get(ring)!;
-      if (Math.abs(s.total - band.mean) > band.spread) out.push(`species ${s.name}: total ${s.total} outside ring ${ring} (${band.mean} +- ${band.spread})`);
-    }
-  }
-  return out;
+// Species living outside the round's rings. (Their strength is rolled per ring: config creature.gen.)
+export function findRingProblems(rings: RingConfig, species: { name: string; ringMin: number; ringMax: number }[]): string[] {
+  return species.filter((s) => s.ringMin < 1 || s.ringMax > rings.count || s.ringMin > s.ringMax)
+    .map((s) => `species ${s.name}: rings ${s.ringMin}-${s.ringMax} outside 1-${rings.count}`);
 }
 
 // Vices (config `vice`): one type per core stat; main_weight: the type's stat against 1 for each other stat;
 // find_permille: chance an encounter in a vice's hex is the vice itself (finding one is hard: rumors, slim odds).
-export type ViceConfig = { types: ('str' | 'dex' | 'int' | 'end' | 'luck' | 'charm')[]; mainWeight: number; findPermille: number };
+// race: what a vice is made of (its body parts); moves: per type, the moves it knows from birth (all open, they train
+// its stat); budget_bonus: move levels on top of its ring's creature budget.
+export type ViceConfig = {
+  types: ('str' | 'dex' | 'int' | 'end' | 'luck' | 'charm')[]; mainWeight: number; findPermille: number;
+  race: string; budgetBonus: number; moves: Record<string, string[]>;
+};
 
-export function viceConfig(raw: { types: ViceConfig['types']; main_weight: number; find_permille: number }): ViceConfig {
-  return { types: raw.types, mainWeight: raw.main_weight, findPermille: raw.find_permille };
+export function viceConfig(raw: {
+  types: ViceConfig['types']; main_weight: number; find_permille: number; race?: string; budget_bonus?: number; moves?: Record<string, string[]>;
+}): ViceConfig {
+  return {
+    types: raw.types, mainWeight: raw.main_weight, findPermille: raw.find_permille,
+    race: raw.race ?? 'human', budgetBonus: raw.budget_bonus ?? 0, moves: raw.moves ?? {},
+  };
+}
+
+// Startup check: every type has moves, and every move exists.
+export function findViceProblems(vice: ViceConfig, moves: ReadonlySet<string>): string[] {
+  return vice.types.flatMap((t) => {
+    const list = vice.moves[t] ?? [];
+    if (list.length === 0) return [`vice ${t}: no moves`];
+    return list.filter((m) => !moves.has(m)).map((m) => `vice ${t}: unknown move ${m}`);
+  });
+}
+
+// The boss (config `boss`, `key_weakening`, `boss_set_weakening`; all hidden). Stats: world.rings boss_total split
+// evenly. moves: its whole move list (growth is capped by it), move_budget levels rolled at its making; every vice
+// born after the round start feeds it exp_per_vice move exp. Keys carried at entry weaken it at fight start
+// (per_key for the first of a type, x duplicate_falloff for each more), each consumed key set adds set_weakening
+// for good; the sum never passes max_weakening. Weakening lowers every core stat by that share for the fight.
+export type BossConfig = {
+  race: string; moves: string[]; moveBudget: number; expPerVice: number; maxWeakening: number;
+  perKey: number; duplicateFalloff: number; setWeakening: number;
+};
+
+export function bossConfig(
+  raw: { race: string; moves: string[]; move_budget: number; exp_per_vice: number; max_weakening: number },
+  keys: { per_key: number; duplicate_falloff: number }, setWeakening: number,
+): BossConfig {
+  return {
+    race: raw.race, moves: raw.moves, moveBudget: raw.move_budget, expPerVice: raw.exp_per_vice, maxWeakening: raw.max_weakening,
+    perKey: keys.per_key, duplicateFalloff: keys.duplicate_falloff, setWeakening,
+  };
 }

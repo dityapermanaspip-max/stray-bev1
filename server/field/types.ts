@@ -5,8 +5,9 @@ export type FieldKind = 'open' | 'corridor' | 'town';
 // Shape: size, kind, and how obstacle density scales here. Towns add a layout for their safe middle.
 export type FieldTemplate = { name: string; kind: FieldKind; width: number; height: number; obstacleMult: number; town: TownLayout | null };
 
-// A town's middle: a safe square of `safe` tiles at one height, a road cross through the centre, and
-// buildings along the road. Each building is blocked except its door, which opens its service.
+// A town's middle: a safe square of `safe` tiles at one height, a road cross through the centre, and buildings
+// at random spots (server/field/town.ts). Each building is blocked except its door, which opens its service.
+// viewReach: rows behind a building it hides, per tile of w + h. houses: door-less fillers, up to max.
 export type TownLayout = {
   safe: number;
   height: number;
@@ -15,6 +16,8 @@ export type TownLayout = {
   building: string;
   door: string;
   buildings: { service: string; w: number; h: number }[];
+  viewReach: number;
+  houses: { max: number; w: number; h: number };
 };
 
 // Look: ground and obstacle terrains (weights), how much is blocked, how hilly.
@@ -25,7 +28,6 @@ export type Biome = {
   obstacleDensity: number; // share of tiles blocked, before the template's obstacle_mult
   hills: { max: number; scale: number; steep: number }; // max level (0-3), hill size in tiles, contrast (1 = rolling, higher = plateaus and cliffs)
   lowland: { share: number; terrain: Record<string, number> }; // part of height-0 ground under water or swamp (blocked)
-  slopeShare: number; // part of cliff edges that get a slope (more are added where needed to keep fields connected)
   nodes: Record<string, number>; // resource nodes per field by kind (rock, tree, herb, fish)
 };
 
@@ -36,9 +38,10 @@ export type FieldSpec = {
   biomeB: Biome | null;
   blend: { from: number; to: number };
   seed: number;
+  gate?: boolean; // a hex that holds a town: a small walled town in the middle with a gate into the town field
 };
 
-// slope: the uphill direction (index into climb.ts STEPS), or null for flat ground.
+// slope: always null now (flat blocks, climb.ts); kept for the view format.
 // safe: inside a town's middle (no encounters). service: a town door (inn, shop, ...).
 export type Tile = {
   terrain: string; biome: string; height: number; walkable: boolean; slope: number | null; safe?: boolean; service?: string | null;

@@ -29,7 +29,7 @@ function held(town: Town, item: string): number {
 // What the town asks for one, at its current stock (or with `extra` more on the shelf).
 export function townPrice(cfg: BalanceConfig, catalog: ItemCatalog, town: Town, item: string, quality: string, extra = 0): number | null {
   const def = catalog.get(item);
-  if (!def || !tradeable(cfg.economy, def)) return null;
+  if (!def || !tradeable(cfg.economy, def, town.taboo)) return null;
   return sellPrice(cfg.economy, def, quality, held(town, item) + extra, capacityOf(cfg.economy, def, town.specialties));
 }
 

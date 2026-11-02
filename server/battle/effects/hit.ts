@@ -14,7 +14,7 @@ import { payMoveExp } from '../exp.ts';
 import { isAlive } from '../rules.ts';
 import type { BattleEntity, EffectDef, HitOutcome, MoveDef } from '../types.ts';
 import { fireCounter, readyCounter } from './counter.ts';
-import { armorDefenseVs, fireGear, gearAccuracy, gearPower, vsArmorBonus, wearOnHit } from './gear_hooks.ts';
+import { armorDefenseVs, fireGear, gearAccuracy, gearPower, handPower, handsOf, vsArmorBonus, wearOnHit } from './gear_hooks.ts';
 
 // Shared handler types, the damage handler, and the control wrapper used by control effects.
 
@@ -88,7 +88,8 @@ export function strike(use: UseContext, target: BattleEntity, power: number, par
   const resistType = core.resistance(target, 'damage_type', move.damageType);
   const resistElement = core.resistance(target, 'element', move.element);
   const mult = powerMult(core, actor, target, params);
-  const weaponPower = gearPower(actor, move);
+  const gearExtra = gearPower(actor, move);
+  const hands = handsOf(params);
   const typeBonus = vsArmorBonus(actor, move, target);
   const armor = defenseReduction(c, armorDefenseVs(target, move));
   let landed = false;
@@ -113,7 +114,7 @@ export function strike(use: UseContext, target: BattleEntity, power: number, par
     crit ||= isCrit;
     const raw = baseDamage({
       power: (power * mult) / hits,
-      weaponPower: weaponPower / hits,
+      weaponPower: gearExtra / hits + handPower(actor, move, hands, i, hits),
       ammoPower: 0,
       typeBonus,
       levelMult: levelMult(use.rates.damage, use.level),
@@ -127,7 +128,7 @@ export function strike(use: UseContext, target: BattleEntity, power: number, par
     const taken = counter ? Math.round(amount * counter.take) : amount;
     const dealt = taken - blockWithGuard(core, target, taken, actor);
     if (core.damage(target, dealt, actor.id, isCrit ? 'crit' : 'hit').killed) killed = true;
-    wearOnHit(core, actor, move, target);
+    wearOnHit(core, actor, move, target, { main: hands !== 'each' || i % 2 === 0, off: hands === 'sum' || (hands === 'each' && i % 2 === 1) });
     if (counter) fireCounter(core, target, actor, counter, amount);
     fireGear(core, actor, target, 'on_hit', move);
     fireGear(core, target, actor, 'on_struck', move);

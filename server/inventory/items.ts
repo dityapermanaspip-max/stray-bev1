@@ -9,9 +9,12 @@ export type Wield = {
   power: number;
   accuracy: number;
   hands: 1 | 2;
+  offHandOnly: boolean; // shields and the like: held in the off hand by anyone, never in the main hand
+  needsDual: boolean; // a pair held as one (tonfa): only a dual wielder can hold it
   thrown: boolean;
   vsArmor: Record<string, number>; // armor material tag -> damage bonus at full coverage
   grantsMove: string | null;
+  offGrantsMove: string | null; // taught the first time it is held as a second weapon (dual wield)
 };
 
 export type Worn = { slot: string; armor: boolean; punchPower: number; kickPower: number };
@@ -41,6 +44,7 @@ export type ItemDef = {
   edible: boolean | null; // null = not food
   rotsTo: string | null; // what this becomes when its carcass was rotten
   toolType: string | null; // what a non-weapon tool counts as at a resource node (axe, pick, rod)
+  ammoType: string | null; // ammo for moves that need it (arrow): every stack in the bag counts in battle
   meal: Record<string, number> | null; // hidden food effect (food config): stamina_cost, mana_cost, standby_regen
   carcassOf: string | null; // species this carcass came from
   wield: Wield | null;
@@ -90,6 +94,7 @@ export function parseItem(
     edible: typeof data.edible === 'boolean' ? data.edible : null,
     rotsTo: typeof data.rots_to === 'string' ? data.rots_to : null,
     toolType: typeof data.tool_type === 'string' ? data.tool_type : null,
+    ammoType: typeof data.ammo_type === 'string' ? data.ammo_type : null,
     meal: (obj(data.meal) as Record<string, number> | null) ?? null,
     carcassOf: typeof data.carcass_of === 'string' ? data.carcass_of : null,
     wield: w
@@ -98,9 +103,12 @@ export function parseItem(
           power: Number(w.power ?? 0),
           accuracy: Number(w.accuracy ?? 1),
           hands: Number(w.hands) === 2 ? 2 : 1,
+          offHandOnly: w.off_hand_only === true,
+          needsDual: w.needs_dual === true,
           thrown: w.thrown === true,
           vsArmor: (obj(w.vs_armor) as Record<string, number>) ?? {},
           grantsMove: typeof w.grants_move === 'string' ? w.grants_move : null,
+          offGrantsMove: typeof w.off_grants_move === 'string' ? w.off_grants_move : null,
         }
       : null,
     worn: worn

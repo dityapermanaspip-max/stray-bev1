@@ -2,6 +2,8 @@ import type { BattleEntity, BattleEvent } from '../battle/types.ts';
 import { equippedMoves } from '../loadout/loadout.ts';
 import type { LinePicker } from '../presentation/line_picker.ts';
 import type { Rng } from '../util/rng.ts';
+import { VICE_NAME } from '../vice/vice_check.ts';
+import { BOSS_NAME } from '../db/startup_check.ts';
 import type { BattleEventView, BattleFighter, BattleView, Word } from '../../shared/battle.ts';
 import type { Fight } from './battle_setup.ts';
 
@@ -12,21 +14,24 @@ export const MOVE_NAME = 'move_name_';
 export const SPECIES_NAME = 'species_name_';
 export const BODY_WORD = 'body_word.';
 
-export type Words = { lines: LinePicker; rng: Rng; moves: ReadonlyMap<string, { target: string }> };
+export type Words = { lines: LinePicker; rng: Rng; moves: ReadonlyMap<string, { target: string; rowRule?: string }> };
 
 const named = (w: Words, key: string, fallback: string) => w.lines.pick(w.rng, key)?.text ?? fallback;
 export const word = (w: Words, resource: string, tier: number): Word => ({ tier, text: w.lines.pick(w.rng, BODY_WORD + resource, tier)?.text ?? null });
 
 function fighterName(w: Words, f: Fight, e: BattleEntity): string {
   if (e === f.player) return f.order.name;
-  const species = f.order.foes[f.foes.indexOf(e)]?.species ?? e.id;
+  const foe = f.order.foes[f.foes.indexOf(e)];
+  if (foe?.vice) return named(w, VICE_NAME + foe.vice.type, 'vice');
+  if (foe?.boss) return named(w, BOSS_NAME, 'boss');
+  const species = foe?.species ?? e.id;
   return named(w, SPECIES_NAME + species, species);
 }
 
 export function fighterView(w: Words, f: Fight, e: BattleEntity): BattleFighter {
   const you = e === f.player;
   return {
-    id: e.id, side: e.side, row: e.row, name: fighterName(w, f, e), you, corrupted: e.corrupted, downed: e.hp <= 0,
+    id: e.id, side: e.side, slot: e.slot, row: e.row, name: fighterName(w, f, e), you, corrupted: e.corrupted, downed: e.hp <= 0,
     hp: word(w, 'hp', e.tiers.hp),
     stamina: you ? word(w, 'stamina', e.tiers.stamina) : null,
     mana: you ? word(w, 'mana', e.tiers.mana) : null,
@@ -35,17 +40,20 @@ export function fighterView(w: Words, f: Fight, e: BattleEntity): BattleFighter 
 
 export const isReady = (f: Fight) => f.player.phase === 'ready' && !f.player.queued && f.instance.winner === null;
 
-export function battleView(w: Words, f: Fight, slots: number): BattleView {
+export function battleView(w: Words, f: Fight, slots: number, formation: { front: number; back: number }): BattleView {
   const entities = f.instance.entities;
   const all = new Set(entities.flatMap((e) => e.moves));
   const equipped = [...f.state.loadout].sort((a, b) => a[0] - b[0]);
   const moves = equipped
     .filter(([, move]) => f.player.moves.includes(move))
-    .map(([slot, move]) => ({ move, slot, name: named(w, MOVE_NAME + move, move), target: w.moves.get(move)?.target ?? 'one_enemy' }));
+    .map(([slot, move]) => ({
+      move, slot, name: named(w, MOVE_NAME + move, move), target: w.moves.get(move)?.target ?? 'one_enemy', front: w.moves.get(move)?.rowRule === 'front',
+    }));
   return {
     you: f.player.id,
     fighters: entities.map((e) => fighterView(w, f, e)),
     slots,
+    formation: { front: formation.front, back: formation.back },
     moves,
     moveNames: Object.fromEntries([...all, ...equippedMoves(f.state.loadout)].map((m) => [m, named(w, MOVE_NAME + m, m)])),
     ready: isReady(f),
@@ -58,7 +66,7 @@ export function eventsFor(w: Words, f: Fight, events: BattleEvent[]): BattleEven
   const out: BattleEventView[] = [];
   for (const e of events) {
     switch (e.type) {
-      case 'use': case 'damage': case 'miss': case 'heal': case 'interrupt': case 'downed': case 'counter':
+      case 'use': case 'damage': case 'miss': case 'heal': case 'interrupt': case 'downed': case 'counter': case 'moved':
         out.push(e);
         break;
       case 'line':

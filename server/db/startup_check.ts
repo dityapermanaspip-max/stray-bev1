@@ -1,3 +1,4 @@
+import { TRAIT_FLAVOR_PREFIX, TRAIT_NAME_PREFIX } from '../growth/traits.ts';
 import { fitsSlot, type ItemDef } from '../inventory/items.ts';
 
 // Pure startup-check rules. Data loading lives in check.ts.
@@ -37,6 +38,8 @@ export const BODY_WORD_PREFIX = 'body_word.';
 export const SERVICE_NAME_PREFIX = 'service_name_';
 export const BIOME_NAME_PREFIX = 'biome_name_'; // world map biome names
 export const NODE_NAME_PREFIX = 'node_name_'; // resource node kinds (gather config)
+export const VICE_NAME_PREFIX = 'vice_name_'; // + vice type: what a player calls a vice of that type
+export const BOSS_NAME = 'boss_name_heart'; // what a player calls the boss (a name key: one line is enough)
 export const BATTLE_LINE_KEYS = ['battle.won', 'battle.lost', 'battle.cannot'];
 export const TOWN_LINE_KEYS = [
   'town.inn.rested', 'town.inn.no_money', 'town.closed', 'town.shop.nothing', 'loadout.not_here',
@@ -46,10 +49,13 @@ export const TOWN_LINE_KEYS = [
   // the shopkeeper's standing (standing/shop_standing.ts); greetings also need tiers 1-3 (checked below)
   'town.shop.greet', 'town.shop.haggle_won', 'town.shop.haggle_lost', 'town.shop.generous', 'town.shop.pushover',
   // status window refusals (game/status_service.ts)
-  'loadout.in_battle', 'loadout.bad_slot', 'loadout.unknown_move', 'loadout.not_slottable', 'gear.not_held', 'gear.not_wearable', 'gear.bad_slot',
+  'loadout.in_battle', 'loadout.bad_slot', 'loadout.unknown_move', 'loadout.not_slottable', 'gear.not_held', 'gear.not_wearable', 'gear.bad_slot', 'gear.no_dual_wield',
+  'formation.bad_slot',
 ];
-const NAME_PREFIXES = [NAME_PREFIX, ITEM_NAME_PREFIX, SPECIES_NAME_PREFIX, BODY_WORD_PREFIX, SERVICE_NAME_PREFIX, BIOME_NAME_PREFIX, NODE_NAME_PREFIX];
-const isNameKey = (key: string) => NAME_PREFIXES.some((p) => key.startsWith(p));
+// A trait has one name and one flavor sentence (shown by the crystal ball).
+const NAME_PREFIXES = [NAME_PREFIX, ITEM_NAME_PREFIX, SPECIES_NAME_PREFIX, BODY_WORD_PREFIX, SERVICE_NAME_PREFIX, BIOME_NAME_PREFIX, NODE_NAME_PREFIX, VICE_NAME_PREFIX,
+  TRAIT_NAME_PREFIX, TRAIT_FLAVOR_PREFIX];
+const isNameKey = (key: string) => key === BOSS_NAME || NAME_PREFIXES.some((p) => key.startsWith(p));
 const isSingleLineKey = (key: string) => isNameKey(key) || key.startsWith(ARRIVAL_PREFIX);
 
 // Every generic pool needs minLines sentences. Display names and arrival text need exactly one.
@@ -146,8 +152,9 @@ export function findItemProblems(
     if (!item.stack && fitsSlot(item) && !(Number(item.maxDurability) > 0)) problems.push(`${item.name}: gear needs max_durability or a material durability`);
     const fits = fitsSlot(item);
     if (fits && !accepts.has(fits)) problems.push(`${item.name}: no gear slot accepts ${fits}`);
-    const grants = item.wield?.grantsMove;
-    if (grants && !moveNames.has(grants)) problems.push(`${item.name}: grants unknown move ${grants}`);
+    for (const grants of [item.wield?.grantsMove, item.wield?.offGrantsMove]) {
+      if (grants && !moveNames.has(grants)) problems.push(`${item.name}: grants unknown move ${grants}`);
+    }
     if (item.worn?.armor && !item.material) problems.push(`${item.name}: armor needs a core material`);
   }
   for (const kind of new Set(slots.map((s) => s.kind))) {

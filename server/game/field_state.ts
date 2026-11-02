@@ -1,4 +1,6 @@
 import { schema, t, type SchemaType } from '@colyseus/schema';
+import type { Walker } from '../field/walker.ts';
+import type { Pending } from './ask.ts';
 
 // Synced field state: who stands where. Kept small; the tile grid goes once per join as a message.
 
@@ -16,3 +18,11 @@ export const FieldState = schema({
   players: t.map(FieldPlayer), // by sessionId
 }, 'FieldState');
 export type FieldState = SchemaType<typeof FieldState>;
+
+// A seated player's room-side data. grace: steps left before encounters roll again (after entering or an encounter).
+// door: the town service the player went into. ask: the yes / no question waiting. mealEnds: when the hidden meal
+// effect runs out (ms), to say so then. aim: the resource node the walk heads for (it ends beside it).
+export type Seat = {
+  entityId: string; name: string; walker: Walker; speed: number; luck: number; grace: number; leaving: boolean;
+  door: string | null; ask: Pending | null; mealEnds: number | null; aim: number | null;
+};

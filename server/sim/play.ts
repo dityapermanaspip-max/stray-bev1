@@ -29,6 +29,7 @@ const { values } = parseArgs({
     race: { type: 'string', default: 'human' },
     enemies: { type: 'string', default: 'chicken' },
     corrupted: { type: 'boolean', default: false },
+    ring: { type: 'string' }, // where the foes are met (default the outer ring)
     seed: { type: 'string', default: String(Date.now() % 100000) },
     'set-move': { type: 'string', multiple: true, default: [] },
     equip: { type: 'string', multiple: true, default: [] },
@@ -109,14 +110,15 @@ try {
     const species = await loadSpecies(pool);
     const inventory = await loadInventory(pool, s.id);
     const player = growerEntity(cfg, {
-      id: s.id, kind: 'player', side: 'party', row: 'front', speaker: 'self', controller: 'ai',
+      id: s.id, kind: 'player', side: 'party', slot: s.slot, speaker: 'self', controller: 'ai',
       progress: s.progress, loadout: s.loadout, bodyParts: s.bodyParts, body: s.body,
       gear: buildCombatGear(cfg, catalog, inventory),
     });
+    const roll = createRng(Number(values.seed) + 1);
     const foes: BattleEntity[] = values.enemies!.split(',').map((name, i) => {
       const def = species.get(name.trim());
       if (!def) throw new Error(`unknown species ${name}`);
-      return buildCreature(cfg, def, i + 1, values.corrupted!);
+      return buildCreature(cfg, def, i + 1, values.corrupted!, Number(values.ring ?? cfg.rings.count), roll);
     });
     const battle = new BattleInstance(data, {
       entities: [player, ...foes],

@@ -1,11 +1,14 @@
 import type pg from 'pg';
+import { formationConfig, type FormationConfig } from '../battle/formation.ts';
+import { creatureGenConfig, type CreatureGenConfig } from './creature_config.ts';
 import { foodConfig, gatherConfig, type FoodConfig, type GatherConfig } from './gather_config.ts';
 import { growthConfig, type GrowthConfig } from './growth_config.ts';
 import { standingConfig, type StandingConfig } from './standing_config.ts';
 import { worldGenConfig, type WorldGenConfig } from './worldgen_config.ts';
-import { ringConfig, viceConfig, type RingConfig, type ViceConfig } from './world_config.ts';
+import { bossConfig, ringConfig, viceConfig, type BossConfig, type RingConfig, type ViceConfig } from './world_config.ts';
 import { clockConfig, economyConfig, townTickConfig, type ClockConfig, type EconomyConfig, type TownTickConfig } from './town_config.ts';
 import type { LuckConfig } from '../util/luck.ts';
+import type { TraitRules } from '../growth/traits.ts';
 
 // Typed view of balance_config. Every number the battle uses comes from here.
 
@@ -49,6 +52,7 @@ export type CombatConfig = {
   atbFull: number;
   effectTurnMs: number;
   magicStaminaShare: number;
+  reachStrayChance: number; // a reach move (spear) used from behind a living front row hits an ally instead
 };
 
 export type LootConfig = {
@@ -88,6 +92,7 @@ export type BalanceConfig = {
   bodyTiers: Record<BodyResource, number[]>;
   moveLevelWords: number[];
   summonerExpBonus: number; // hidden
+  traits: TraitRules; // quota roll (growth/traits.ts), hidden
   aiHealBelowTier: number;
   playerStartStats: Record<string, number>;
   playerStartMoves: string[];
@@ -107,11 +112,15 @@ export type BalanceConfig = {
   clock: ClockConfig;
   rings: RingConfig;
   vice: ViceConfig;
+  boss: BossConfig;
+  round: { closingHours: number }; // real hours a round stays open after its boss first falls
   statGrowth: GrowthConfig; // stat exp by move tier, hidden race move exp rules
   standing: StandingConfig; // hidden favor, fame and haggling rules
   worldGen: WorldGenConfig; // how a new round's map is made
   gather: GatherConfig; // resource nodes (hidden numbers)
   food: FoodConfig;
+  creatureGen: CreatureGenConfig; // how regular creatures are rolled per ring (hidden)
+  formation: FormationConfig; // battle slots per side
 };
 
 
@@ -125,6 +134,7 @@ export type TickConfig = {
   birth: { intervalHours: number; rate: number };
   conversion: { intervalHours: number; rate: number };
   feeding: { intervalHours: number; rate: number; threshold: number };
+  invasion: { intervalHours: number; threshold: number; share: number }; // a vice leads share of the corrupted out at threshold x max
 };
 
 const GROWTH_KEY = /^growth\.([a-z_]+)\.(damage|recovery|cost)_per_level$/;
@@ -188,11 +198,17 @@ export function buildBalance(raw: Map<string, unknown>): BalanceConfig {
       atbFull: num('combat.atb_full'),
       effectTurnMs: num('combat.effect_turn_ms'),
       magicStaminaShare: num('combat.magic_stamina_share'),
+      reachStrayChance: num('combat.reach_stray_chance'),
     },
     growth,
     bodyTiers: need('body_tiers'),
     moveLevelWords: need<{ tiers: number[] }>('move_level_words').tiers,
     summonerExpBonus: num('summoner_exp_bonus'),
+    traits: {
+      quota: need('trait_quota'),
+      window: { minShare: need<{ min_share: number }>('trait_window').min_share, maxShare: need<{ max_share: number }>('trait_window').max_share },
+      elements: need('elements'),
+    },
     aiHealBelowTier: num('ai.heal_below_tier'),
     playerStartStats: need('player_start_stats'),
     playerStartMoves: need('player_start_moves'),
@@ -237,11 +253,15 @@ export function buildBalance(raw: Map<string, unknown>): BalanceConfig {
     clock: clockConfig(need('world_clock')),
     rings: ringConfig(need('world.rings')),
     vice: viceConfig(need('vice')),
+    boss: bossConfig(need('boss'), need('key_weakening'), Number(need('boss_set_weakening'))),
+    round: { closingHours: Number(need<{ closing_hours: number }>('round').closing_hours) },
     statGrowth: growthConfig(need('growth.tiers'), need('growth.race_exp')),
     standing: standingConfig(need('standing')),
     worldGen: worldGenConfig(need('world.gen')),
     gather: gatherConfig(need('gather')),
     food: foodConfig(need('food')),
+    creatureGen: creatureGenConfig(need('creature.gen')),
+    formation: formationConfig(need('battle.formation')),
     encounter: (({ per_step_permille, grace_steps, group_max, near_town_group_max }) => ({
       perStepPermille: per_step_permille, graceSteps: grace_steps, groupMax: group_max, nearTownGroupMax: near_town_group_max,
     }))(need<{ per_step_permille: number; grace_steps: number; group_max: number; near_town_group_max: number }>('field.encounter'),
@@ -251,6 +271,9 @@ export function buildBalance(raw: Map<string, unknown>): BalanceConfig {
       conversion: (({ interval_hours, rate }) => ({ intervalHours: interval_hours, rate }))(need<{ interval_hours: number; rate: number }>('tick.conversion')),
       feeding: (({ interval_hours, rate, threshold }) => ({ intervalHours: interval_hours, rate, threshold }))(
         need<{ interval_hours: number; rate: number; threshold: number }>('tick.feeding'),
+      ),
+      invasion: (({ interval_hours, threshold, share }) => ({ intervalHours: interval_hours, threshold, share }))(
+        need<{ interval_hours: number; threshold: number; share: number }>('tick.invasion'),
       ),
     },
   };

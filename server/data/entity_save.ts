@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import type { BalanceConfig } from '../config/balance.ts';
 import type { Progress } from '../growth/level_up.ts';
+import type { Trait } from '../growth/traits.ts';
 import type { Inventory } from '../inventory/bag.ts';
 import { starterLoadout, type Loadout } from '../loadout/loadout.ts';
 import { STATS } from '../stats/derived.ts';
@@ -26,7 +27,7 @@ export async function inTransaction<T>(pool: pg.Pool, work: (client: pg.PoolClie
   }
 }
 
-async function writeProgress(client: pg.PoolClient, entityId: string, progress: Progress, seen: boolean) {
+export async function writeProgress(client: pg.PoolClient, entityId: string, progress: Progress, seen: boolean) {
   await client.query(
     `INSERT INTO entity.entity_stats (entity_id, stat, base, exp)
      SELECT $1, x.stat, x.base, x.exp FROM unnest($2::text[], $3::numeric[], $4::numeric[]) AS x(stat, base, exp)
@@ -58,7 +59,7 @@ async function writeBody(client: pg.PoolClient, entityId: string, body: BodyNow 
   );
 }
 
-async function writeLoadout(client: pg.PoolClient, entityId: string, loadout: Loadout) {
+export async function writeLoadout(client: pg.PoolClient, entityId: string, loadout: Loadout) {
   const slots = [...loadout];
   await client.query('DELETE FROM entity.loadouts WHERE entity_id = $1', [entityId]);
   await client.query(
@@ -86,6 +87,11 @@ export async function saveBattleResults(
 
 export async function saveLoadout(pool: pg.Pool, entityId: string, loadout: Loadout): Promise<void> {
   await inTransaction(pool, (client) => writeLoadout(client, entityId, loadout));
+}
+
+// The battle formation slot, chosen in town (validated by the caller).
+export async function saveSlot(pool: pg.Pool, entityId: string, slot: number): Promise<void> {
+  await pool.query('UPDATE entity.entities SET slot = $2 WHERE id = $1', [entityId, slot]);
 }
 
 // Bag and gear changes, plus any move learned or grown (a weapon's basic move, a life skill), at once.
@@ -142,4 +148,32 @@ export async function createPlayer(pool: pg.Pool, cfg: BalanceConfig, name: stri
     await writeLoadout(client, id, starterLoadout(cfg, cfg.playerStartMoves));
     return id;
   });
+}
+
+// Gives an entity its rolled traits. Element traits also write their elements' affinity (the trait's hidden
+// modifiers.affinity, never lowering one already higher) and element_slots. One transaction.
+export async function saveTraits(pool: pg.Pool, entityId: string, traits: readonly Trait[]): Promise<void> {
+  await inTransaction(pool, (client) => writeTraits(client, entityId, traits));
+}
+
+export async function writeTraits(client: pg.PoolClient, entityId: string, traits: readonly Trait[]): Promise<void> {
+  for (const t of traits) {
+    await client.query(
+      `INSERT INTO entity.entity_traits (entity_id, trait_id, params)
+       SELECT $1, id, $3::jsonb FROM entity.traits WHERE trait_name = $2
+       ON CONFLICT (entity_id, trait_id) DO NOTHING`,
+      [entityId, t.name, JSON.stringify(t.params)],
+    );
+    const elements = Array.isArray(t.params.elements) ? t.params.elements.map(String) : [];
+    for (const element of elements) {
+      await client.query(
+        `INSERT INTO entity.entity_affinity (entity_id, element, value) VALUES ($1, $2, $3)
+         ON CONFLICT (entity_id, element) DO UPDATE SET value = GREATEST(entity.entity_affinity.value, EXCLUDED.value)`,
+        [entityId, element, Number(t.modifiers.affinity ?? 0)],
+      );
+    }
+    if (elements.length > 0) {
+      await client.query('UPDATE entity.entities SET element_slots = GREATEST(element_slots, $2) WHERE id = $1', [entityId, elements.length]);
+    }
+  }
 }

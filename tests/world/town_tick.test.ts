@@ -20,7 +20,7 @@ const half = () => 0.5; // chance rounding: x.5 and above rounds up, below round
 
 function town(stock: Record<string, number>, purse = 100): Town {
   return {
-    ref: 'town', purse, maxBuy: 100, specialties: [], facilities: {},
+    ref: 'town', purse, maxBuy: 100, specialties: [], taboo: [], facilities: {},
     stock: new Map(Object.entries(stock).map(([item, qty]) => [stackKey(item, 'common'), { item, quality: 'common', qty }])),
   };
 }

@@ -1,13 +1,37 @@
 import { levelMult } from '../damage.ts';
-import { control, NONE, turnsOf, type Handler } from './hit.ts';
+import { setSlot, slotBehind } from '../formation.ts';
+import { isAlive } from '../rules.ts';
+import type { BattleEntity } from '../types.ts';
+import { control, NONE, turnsOf, type Handler, type UseContext } from './hit.ts';
 
 // Control handlers: push, stun, silence, taunt, bind, disable a body part, drain stamina.
 
-export const knockback: Handler = (use, target, effect) =>
-  control(use, target, effect, 'knockback', () => {
+// Knockback: the target loses its ATB and, from the front row, is pushed into the back slot behind it. When that
+// slot is held, nobody moves and both take collision damage (a share of the knockback's hit, at least min damage).
+export const knockback: Handler = (use, target, effect) => {
+  const before = target.hp;
+  return control(use, target, effect, 'knockback', () => {
     target.atb = 0;
     if (target.phase === 'ready') target.phase = 'filling';
+    push(use, target, Math.max(0, before - target.hp));
   });
+};
+
+function push(use: UseContext, target: BattleEntity, hit: number): void {
+  const { core } = use;
+  const f = core.cfg.formation;
+  const behind = slotBehind(f, target.slot);
+  if (behind === null || !isAlive(target)) return; // already in the back row
+  const blocker = core.entities.find((e) => e !== target && e.side === target.side && e.slot === behind && isAlive(e));
+  if (!blocker) {
+    setSlot(f, target, behind);
+    core.emit({ type: 'moved', entity: target.id, slot: target.slot, row: target.row });
+    return;
+  }
+  const amount = Math.max(core.cfg.combat.minDamage, Math.round(hit * f.knockbackBlockedShare));
+  core.damage(target, amount, use.actor.id, 'hit');
+  core.damage(blocker, amount, use.actor.id, 'hit');
+}
 
 export const stun: Handler = (use, target, effect) => {
   if (use.core.find(target, 'stun_immune') || use.core.find(target, 'stun')) return NONE;

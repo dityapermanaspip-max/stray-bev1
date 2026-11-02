@@ -17,6 +17,7 @@ export type SessionOptions = {
   fights: number;
   enemies: string[];
   corruptedShare: number;
+  ring?: number; // where the creatures are met (default the outer ring)
   lowHpTier: number;
   seed: number;
   start: { stats: CoreStats; moves: { name: string; level: number }[] } | null;
@@ -62,7 +63,7 @@ export function runSession(world: SessionWorld, opts: SessionOptions): SessionRe
   for (let fight = 1; fight <= opts.fights; fight++) {
     const player = buildPlayer(cfg, progress, loadout, bodyParts);
     if (carried) applyBody(cfg, player, carried);
-    const enemy = buildCreature(cfg, pick(rng, enemyPool)!, 1, rng() < opts.corruptedShare);
+    const enemy = buildCreature(cfg, pick(rng, enemyPool)!, 1, rng() < opts.corruptedShare, opts.ring ?? cfg.rings.count, rng);
     const battle = new BattleInstance(data, {
       entities: [player, enemy],
       progress: new Map([['player', progress]]),

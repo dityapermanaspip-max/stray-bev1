@@ -32,7 +32,7 @@ test('the first equip of a weapon teaches its basic move once, unequipped from t
   assert.equal(first.learned, 'sword_slash');
   assert.equal(first.kind, 'wield');
   assert.deepEqual(progress.moves.get('sword_slash'), { level: 1, exp: 0 });
-  const second = equipGear(cfg, catalog, inv, progress, pieceOf(inv, 'iron_sword', 1), TOWN, 'off_hand') as GearChange;
+  const second = equipGear(cfg, catalog, inv, progress, pieceOf(inv, 'iron_sword', 1), TOWN, 'off_hand', true) as GearChange;
   assert.equal(second.learned, null);
   assert.ok(inv.known.has('iron_sword'));
 });

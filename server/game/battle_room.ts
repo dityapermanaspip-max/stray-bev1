@@ -1,10 +1,10 @@
 import { Room, type Client } from '@colyseus/core';
 import { createBattleRow, snapshotBattle } from '../data/battle_repo.ts';
-import { stopFighting, withEntity } from '../util/entity_lock.ts';
+import { withEntity } from '../util/entity_lock.ts';
 import { createRng } from '../util/rng.ts';
 import type { ActRequest, BattleLine, BattleView } from '../../shared/battle.ts';
 import { finishFight } from './battle_end.ts';
-import { fightState, setUpFight, type BattleOrder, type Fight } from './battle_setup.ts';
+import { fightState, releaseFight, setUpFight, type BattleOrder, type Fight } from './battle_setup.ts';
 import { battleView, eventsFor, isReady, type Words } from './battle_view.ts';
 import type { GameWorld } from './world.ts';
 
@@ -35,7 +35,7 @@ export class BattleRoom extends Room<{ client: BattleClient }> {
   private sinceSnapshot = 0;
 
   messages = {
-    view: (): BattleView => battleView(this.words, this.fight, BattleRoom.world.data.cfg.loadoutSlots),
+    view: (): BattleView => battleView(this.words, this.fight, BattleRoom.world.data.cfg.loadoutSlots, BattleRoom.world.data.cfg.formation),
     act: (client: BattleClient, msg: ActRequest) => this.act(client, msg),
   };
 
@@ -51,7 +51,7 @@ export class BattleRoom extends Room<{ client: BattleClient }> {
 
   // Never leave a player marked as fighting, even if the room goes away without an end.
   onDispose() {
-    if (this.fight) stopFighting(this.fight.order.entityId);
+    if (this.fight) releaseFight(this.fight.order);
   }
 
   // Only the seat the field room reserved can join; its auth data names the player.
@@ -113,7 +113,7 @@ export class BattleRoom extends Room<{ client: BattleClient }> {
   private snapshot(): Promise<void> {
     const p = this.fight.player;
     return snapshotBattle(BattleRoom.world.pool, this.battleId, fightState(this.fight), [{
-      entityId: p.id, atb: p.atb, hp: p.hp, stamina: p.stamina, mana: p.mana, row: p.row, downed: p.hp <= 0,
+      entityId: p.id, atb: p.atb, hp: p.hp, stamina: p.stamina, mana: p.mana, slot: p.slot, downed: p.hp <= 0,
     }]).catch((err: Error) => console.error(`battle snapshot failed: ${err.message}`));
   }
 
@@ -126,7 +126,7 @@ export class BattleRoom extends Room<{ client: BattleClient }> {
       console.error(`battle save failed: ${(err as Error).message}`);
       this.broadcast('result', { won: this.fight.instance.winner === this.fight.player.side, lines: [], taken: [] });
     }
-    stopFighting(this.fight.order.entityId);
+    releaseFight(this.fight.order);
     if (this.clients.length === 0) return void this.disconnect();
     this.clock.setTimeout(() => this.disconnect(), CLOSE_AFTER_MS);
   }

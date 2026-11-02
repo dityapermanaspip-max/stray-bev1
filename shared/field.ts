@@ -3,7 +3,7 @@
 
 export const FIELD_ROOM = 'field';
 
-// terrain, biome, height (0-3), walkable, slope (uphill direction 0-3: +x, +y, -x, -y; -1 flat),
+// terrain, biome, height (0-5), walkable, slope (always -1 now: flat blocks; kept for the format),
 // safe (inside a town's square), door (the town service behind it, or null)
 export type FieldTileView = { t: string; b: string; h: number; w: boolean; s: number; safe: boolean; door: string | null };
 export type FieldView = {

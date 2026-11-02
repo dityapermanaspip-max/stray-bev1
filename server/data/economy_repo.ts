@@ -11,6 +11,7 @@ import { writeInventory } from './item_repo.ts';
 export type StockRow = { item: string; quality: string; qty: number };
 export type Town = {
   ref: string; purse: number; maxBuy: number; specialties: string[];
+  taboo: string[]; // what its folk refuse to trade (culture): item types, shapes or goods families
   facilities: Record<string, number>; // craftsman service -> level (missing = 1)
   stock: Map<string, StockRow>;
 };
@@ -22,12 +23,12 @@ export const facilityLevel = (town: Town | null, facility: string) => town?.faci
 // One town's economy, or null when the field is not a trading town. Any tradeable item the town has no row for
 // (a new town, or an item added since) is filled from config (start fill, more for its specialties) and written.
 export async function loadTown(pool: pg.Pool, cfg: EconomyConfig, catalog: ItemCatalog, ref: string): Promise<Town | null> {
-  const eco = await pool.query<{ purse: number; max_buy: number; specialties: string[]; facilities: Record<string, number> }>(
-    'SELECT purse, max_buy, specialties, facilities FROM world.town_economy WHERE town_ref = $1', [ref],
+  const eco = await pool.query<{ purse: number; max_buy: number; specialties: string[]; facilities: Record<string, number>; taboo: string[] }>(
+    'SELECT purse, max_buy, specialties, facilities, taboo FROM world.town_economy WHERE town_ref = $1', [ref],
   );
   const row = eco.rows[0];
   if (!row) return null;
-  const town: Town = { ref, purse: row.purse, maxBuy: row.max_buy, specialties: row.specialties, facilities: row.facilities, stock: new Map() };
+  const town: Town = { ref, purse: row.purse, maxBuy: row.max_buy, specialties: row.specialties, taboo: row.taboo ?? [], facilities: row.facilities, stock: new Map() };
   const stock = await pool.query<{ item_name: string; quality: string; qty: number }>(
     `SELECT i.item_name, s.quality, s.qty FROM world.town_stock s JOIN item.items i ON i.id = s.item_id WHERE s.town_ref = $1`, [ref],
   );
@@ -35,7 +36,7 @@ export async function loadTown(pool: pg.Pool, cfg: EconomyConfig, catalog: ItemC
   const known = new Set(stock.rows.map((s) => s.item_name));
   const fill: StockRow[] = [];
   for (const def of catalog.values()) {
-    if (known.has(def.name) || !tradeable(cfg, def)) continue;
+    if (known.has(def.name) || !tradeable(cfg, def, town.taboo)) continue;
     const r = { item: def.name, quality: def.defaultQuality, qty: startQty(cfg, def, town.specialties) };
     town.stock.set(stackKey(r.item, r.quality), r);
     fill.push(r);

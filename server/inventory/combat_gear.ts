@@ -8,7 +8,8 @@ import { removeStack, stackedValue, stackKey, wearFactor, type Inventory } from 
 import { armorDefense, type ItemCatalog, type ItemDef } from './items.ts';
 
 // Turns what an entity has equipped into the gear the battle reads, and writes the fight back afterwards.
-// The weapon is the main hand, else the off hand. Armor and accessories are every other slot.
+// The weapon is the main hand, else the off hand. With a weapon in the main hand, whatever the off hand holds (a second
+// weapon for a dual wielder, or a shield) is the off hand. Armor and accessories are every other slot.
 
 const HANDS = ['main_hand', 'off_hand'];
 
@@ -30,7 +31,6 @@ export function buildCombatGear(cfg: BalanceConfig, catalog: ItemCatalog, inv: I
   const worn: { def: ItemDef; wear: number }[] = [];
 
   for (const slot of HANDS) {
-    if (gear.weapon) break;
     const piece = inv.pieces.find((p) => p.slot === slot);
     const stack = [...inv.stacks.values()].find((s) => s.slot === slot);
     const def = catalog.get(piece?.item ?? stack?.item ?? '');
@@ -44,9 +44,19 @@ export function buildCombatGear(cfg: BalanceConfig, catalog: ItemCatalog, inv: I
       thrownItem: stack && def.wield.thrown ? stackKey(stack.item, stack.quality) : null,
       thrownLeft: stack?.qty ?? 0,
     };
-    gear.weapon = weapon;
-    gear.weaponType = def.wield.weaponType;
+    if (!gear.weapon && !def.wield.offHandOnly) {
+      gear.weapon = weapon;
+      gear.weaponType = def.wield.weaponType;
+    } else {
+      gear.offHand = weapon;
+      gear.offHandType = def.wield.weaponType;
+    }
     worn.push({ def, wear });
+  }
+
+  for (const s of inv.stacks.values()) {
+    const ammo = catalog.get(s.item)?.ammoType;
+    if (ammo && s.qty > 0) gear.ammo.push({ type: ammo, key: stackKey(s.item, s.quality), qty: s.qty });
   }
 
   for (const p of inv.pieces) {
@@ -83,7 +93,7 @@ export function buildCombatGear(cfg: BalanceConfig, catalog: ItemCatalog, inv: I
 
 export type GearOutcome = { broken: string[]; thrownBack: number };
 
-// After the fight: pieces lose their wear, spent throws are gone unless recovered after a win.
+// After the fight: pieces lose their wear, spent throws and fired arrows are gone unless recovered after a win.
 // The thrower's luck adds to each recovery roll.
 export function applyBattleWear(cfg: BalanceConfig, inv: Inventory, gear: CombatGear, won: boolean, luck: number, rng: Rng): GearOutcome {
   const broken: string[] = [];
@@ -101,6 +111,16 @@ export function applyBattleWear(cfg: BalanceConfig, inv: Inventory, gear: Combat
     const lost = gear.thrownSpent - thrownBack;
     const held = inv.stacks.get(item)?.qty ?? 0;
     if (lost > 0 && held > 0) removeStack(inv, item, Math.min(lost, held));
+  }
+  const recovery = goodChance(cfg.luck, cfg.gear.ammoRecoveryPermille, luck);
+  for (const [type, spent] of gear.ammoSpent) {
+    let lost = spent;
+    if (won) for (let i = 0; i < spent; i++) if (rollPermille(rng, recovery)) { lost--; thrownBack++; }
+    for (const a of gear.ammo.filter((x) => x.type === type)) {
+      const take = Math.min(lost, inv.stacks.get(a.key)?.qty ?? 0);
+      if (take > 0) removeStack(inv, a.key, take);
+      lost -= take;
+    }
   }
   return { broken, thrownBack };
 }

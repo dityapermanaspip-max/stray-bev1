@@ -5,11 +5,11 @@ import { BattleCore } from './core.ts';
 import { growthRates, levelMult } from './damage.ts';
 import type { EffectResult, UseContext } from './effects/hit.ts';
 import { dropStance } from './effects/counter.ts';
-import { spendThrown } from './effects/gear_hooks.ts';
+import { dropThrownWeapon, spendThrown } from './effects/gear_hooks.ts';
 import { HANDLERS } from './effects/registry.ts';
 import { payMoveExp } from './exp.ts';
 import { effectTurn } from './over_time.ts';
-import { entityCost, expandTargets, isAlive, validTargets } from './rules.ts';
+import { entityCost, expandTargets, isAlive, strayTargets, validTargets } from './rules.ts';
 import type { BattleData, BattleEntity, BattleEvent, MoveDef, PendingAction, Side } from './types.ts';
 
 // One private battle. The server drives it with tick(ms); clients only submit actions.
@@ -118,7 +118,9 @@ export class BattleInstance {
     if (move.resource) this.core.spend(e, move.resource, cost);
     if (staminaShare > 0) this.core.spend(e, 'stamina', staminaShare);
     for (const req of move.requires) {
-      if (req.kind === 'ammo_type') e.ammo.set(req.value, (e.ammo.get(req.value) ?? 0) - 1);
+      if (req.kind !== 'ammo_type') continue;
+      e.ammo.set(req.value, (e.ammo.get(req.value) ?? 0) - 1);
+      e.gear.ammoSpent.set(req.value, (e.gear.ammoSpent.get(req.value) ?? 0) + 1);
     }
     spendThrown(e, move);
     e.queued = null;
@@ -134,7 +136,7 @@ export class BattleInstance {
     const level = e.moveLevels.get(move.name) ?? 1;
     const rates = growthRates(core.cfg, move);
     const chosen = this.retarget(e, move, e.action!);
-    const targets = chosen ? expandTargets(core.entities, e, move, chosen) : [];
+    const targets = chosen ? strayTargets(core.cfg, core.rng, core.entities, e, move, expandTargets(core.entities, e, move, chosen)) : [];
     e.action = null;
     e.phase = 'recovering';
     e.timerMs = move.recovery * 1000 * levelMult(rates.recovery, level);
@@ -148,6 +150,7 @@ export class BattleInstance {
       core.interrupt(target, given);
       this.afterTarget(e, move, target, results);
     }
+    dropThrownWeapon(e, move);
   }
 
   // Lines and move exp for one target of one use.

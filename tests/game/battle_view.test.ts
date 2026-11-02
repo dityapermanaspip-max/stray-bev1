@@ -28,15 +28,15 @@ function fight(): Fight {
   const instance = new BattleInstance(battleData(), { entities: [player, ...foes], progress: new Map([['me', progress]]), summonerSides: new Set(), seed: 1 });
   return {
     order: { entityId: 'me', name: 'walker1', fieldRef: 'f', x: 0, y: 0, seed: 1, foes: [{ species: 'cat', corrupted: true }, { species: 'cat', corrupted: false }] },
-    instance, player, foes,
-    state: { id: 'me', kind: 'player', name: 'walker1', bodyParts: [], progress, loadout: new Map([[1, 'punch']]), body: null, unseen: new Set() },
+    instance, player, foes, vices: new Map(),
+    state: { id: 'me', kind: 'player', name: 'walker1', bodyParts: [], progress, loadout: new Map([[1, 'punch']]), body: null, unseen: new Set(), slot: 1, traits: [], raceResist: new Map() },
     inventory: { pieces: [], stacks: [] } as unknown as Fight['inventory'],
   };
 }
 
 test('the view names fighters, shows own body words and only health for foes', () => {
   const f = fight();
-  const view = battleView(words, f, 8);
+  const view = battleView(words, f, 8, { front: 4, back: 3 });
   assert.equal(view.slots, 8);
   const me = view.fighters.find((x) => x.you)!;
   const foe = view.fighters.find((x) => x.id === 'cat_1')!;
@@ -45,7 +45,8 @@ test('the view names fighters, shows own body words and only health for foes', (
   assert.equal(foe.name, 'Cat');
   assert.equal(foe.hp.text, 'hp5');
   assert.equal(foe.stamina, null);
-  assert.deepEqual(view.moves, [{ move: 'punch', slot: 1, name: 'Punch', target: 'one_enemy' }]);
+  assert.deepEqual(view.moves, [{ move: 'punch', slot: 1, name: 'Punch', target: 'one_enemy', front: true }]);
+  assert.deepEqual(view.formation, { front: 4, back: 3 });
   assert.ok(!JSON.stringify(view).match(/"(str|dex|atb|exp|maxHp)"/));
 });
 

@@ -1,5 +1,4 @@
 import { createRng, type Rng } from '../util/rng.ts';
-import { placeSlope, slopeFits, STEPS } from './climb.ts';
 import { layerSeed, valueNoise } from './noise.ts';
 import { connectField } from './reach.ts';
 import { applyTown } from './town.ts';
@@ -8,10 +7,10 @@ import type { Biome, Exit, FieldGrid, FieldSpec, Point, Tile } from './types.ts'
 // Builds a field from template + biome(s) + seed. The same spec always gives the same field.
 // Each tile picks biome A or B (corridors shift from A to B along their length), then a hill height,
 // then water or swamp on part of the lowest ground, then blocked or not (clumped by noise, mean = biome density
-// x template mult), then a weighted terrain. Towns lay their safe middle over that. Then some cliffs get slopes,
-// and the field is made fully reachable.
+// x template mult), then a weighted terrain. Towns lay their safe middle over that. Then the field is made fully
+// reachable by legal steps (climb.ts: one level up or down; reach.ts: levelled tiles, carved paths).
 
-const LAYER = { biome: 1, hills: 2, obstacles: 3, terrain: 4, lowland: 5, slopes: 6 };
+const LAYER = { biome: 1, hills: 2, obstacles: 3, terrain: 4, lowland: 5 };
 const HEX_DIRECTIONS = 6;
 
 function weighted(rng: Rng, weights: Record<string, number>): string {
@@ -31,10 +30,16 @@ export function corridorBlend(position: number, count: number): { from: number; 
   return { from: (position - 1) / n, to: position / n };
 }
 
+// The town miniature of a hex that holds a town: a walled block around the centre, its gate just below it.
+const gateAt = (w: number, h: number) => ({ x: Math.floor(w / 2), y: Math.floor(h / 2) + 2 });
+const MINI = 1; // the block reaches this many tiles from the centre
+
 function exitsFor(spec: FieldSpec): Exit[] {
   const { width: w, height: h, kind } = spec.template;
   const mid = Math.floor(w / 2);
   if (kind === 'corridor') return [{ id: 'a', x: mid, y: 0 }, { id: 'b', x: mid, y: h - 1 }];
+  if (kind === 'town') return [{ id: 'gate', x: mid, y: h - 1 }]; // a town field's only way out: back to its hex
+  const gate = spec.gate ? [{ id: 'gate', ...gateAt(w, h) }] : [];
   // One exit per hex direction, where a ray from the center meets the edge.
   const cx = (w - 1) / 2;
   const cy = (h - 1) / 2;
@@ -44,7 +49,25 @@ function exitsFor(spec: FieldSpec): Exit[] {
     const dy = Math.sin(angle);
     const t = Math.min(dx === 0 ? Infinity : cx / Math.abs(dx), dy === 0 ? Infinity : cy / Math.abs(dy));
     return { id: `d${d}`, x: Math.round(cx + dx * t), y: Math.round(cy + dy * t) };
-  });
+  }).concat(gate);
+}
+
+// Stamps the walled town block over the middle of a hex field that holds a town (drawn like town buildings).
+// Answers the block's tiles, which carved ramps never cut through.
+function townMiniature(g: FieldGrid): Set<number> {
+  const block = new Set<number>();
+  const cx = Math.floor(g.width / 2);
+  const cy = Math.floor(g.height / 2);
+  const ground = g.tiles[cy * g.width + cx].height;
+  for (let y = cy - MINI; y <= cy + MINI; y++) {
+    for (let x = cx - MINI; x <= cx + MINI; x++) {
+      Object.assign(g.tiles[y * g.width + x], { terrain: 'building', walkable: false, slope: null, height: ground });
+      block.add(y * g.width + x);
+    }
+  }
+  const gate = g.tiles[(cy + MINI + 1) * g.width + cx];
+  Object.assign(gate, { walkable: true, slope: null, height: ground });
+  return block;
 }
 
 // Exits, the spawn and their neighbors are always open ground.
@@ -54,19 +77,6 @@ function keepClear(spawn: Point, exits: Exit[]): Set<string> {
     for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) keep.add(`${p.x + dx},${p.y + dy}`);
   }
   return keep;
-}
-
-// Some cliffs get a slope by chance (the biome's slope_share), so hills are not only reached by forced paths.
-function naturalSlopes(g: FieldGrid, biomes: Record<string, Biome>, rng: Rng): void {
-  for (let y = 0; y < g.height; y++) {
-    for (let x = 0; x < g.width; x++) {
-      const share = biomes[g.tiles[y * g.width + x].biome]?.slopeShare ?? 0;
-      for (const [dx, dy] of STEPS) {
-        const high = { x: x + dx, y: y + dy };
-        if (slopeFits(g, { x, y }, high) && rng() < share) placeSlope(g, { x, y }, high);
-      }
-    }
-  }
 }
 
 export function generateField(spec: FieldSpec): FieldGrid {
@@ -79,7 +89,7 @@ export function generateField(spec: FieldSpec): FieldGrid {
   const lowlandNoise = valueNoise(layerSeed(seed, LAYER.lowland), 4, width, height);
   const rng = createRng(layerSeed(seed, LAYER.terrain));
 
-  const spawn = { x: Math.floor(width / 2), y: Math.floor(height / 2) };
+  const spawn = spec.gate ? { ...gateAt(width, height), y: gateAt(width, height).y + 1 } : { x: Math.floor(width / 2), y: Math.floor(height / 2) };
   const exits = exitsFor(spec);
   const clear = keepClear(spawn, exits);
 
@@ -107,9 +117,9 @@ export function generateField(spec: FieldSpec): FieldGrid {
     }
   }
   const grid: FieldGrid = { width, height, tiles, spawn, exits, nodes: [] };
-  if (template.town) applyTown(grid, template.town);
+  if (template.town) applyTown(grid, template.town, spec.seed);
+  const block = spec.gate && template.kind === 'open' ? townMiniature(grid) : new Set<number>();
   const biomes = { [biomeA.name]: biomeA, [biomeB.name]: biomeB };
-  naturalSlopes(grid, biomes, createRng(layerSeed(seed, LAYER.slopes)));
-  connectField(grid, biomes);
+  connectField(grid, biomes, block);
   return grid;
 }

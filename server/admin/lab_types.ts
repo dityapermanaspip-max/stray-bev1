@@ -31,6 +31,7 @@ export type LabFighter = {
   stats: CoreStats;
   moves: LabMove[];
   row: Row;
+  slot?: number; // battle slot (1..front front row, then back); without it the row picks the first slot of that row
   corrupted: boolean;
   count: number; // copies of this fighter (enemies)
   gear?: LabGearItem[];

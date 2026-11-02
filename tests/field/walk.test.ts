@@ -45,7 +45,7 @@ test('walkers move at the tile rate; heavy loads slow down and the last tier can
 test('exits link hex to corridor chain to hex, both ways', () => {
   const a = { id: 'A', q: 0, r: 0 };
   const b = { id: 'B', q: 1, r: 0 };
-  const world: WorldLinks = { hexes: new Map([['A', a], ['B', b]]), borders: [{ a, b, corridors: ['c1', 'c2', 'c3'] }] };
+  const world: WorldLinks = { hexes: new Map([['A', a], ['B', b]]), borders: [{ a, b, corridors: ['c1', 'c2', 'c3'] }], towns: new Map([['T', 'A']]) };
   assert.equal(directionTo(a, b), 0);
   assert.equal(directionTo(b, a), 3);
   assert.deepEqual(linkExit(world, 'A', 'd0'), { ref: 'c1', exit: 'a' });
@@ -55,3 +55,11 @@ test('exits link hex to corridor chain to hex, both ways', () => {
   assert.deepEqual(linkExit(world, 'c1', 'a'), { ref: 'A', exit: 'd0' });
   assert.equal(linkExit(world, 'A', 'd2'), null); // no border that way
 });
+test('a town gate links its hex and the town field, both ways', () => {
+  const a = { id: 'A', q: 0, r: 0, town: true };
+  const world: WorldLinks = { hexes: new Map([['A', a]]), borders: [], towns: new Map([['T', 'A']]) };
+  assert.deepEqual(linkExit(world, 'A', 'gate'), { ref: 'T', exit: 'gate' });
+  assert.deepEqual(linkExit(world, 'T', 'gate'), { ref: 'A', exit: 'gate' });
+  assert.equal(linkExit(world, 'T', 'd0'), null);
+});
+

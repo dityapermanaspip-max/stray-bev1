@@ -1,6 +1,8 @@
 import path from 'node:path';
+import { findFormationProblems, formationConfig } from '../battle/formation.ts';
 import { fileURLToPath } from 'node:url';
 import type pg from 'pg';
+import { creatureGenConfig, findCreatureGenProblems } from '../config/creature_config.ts';
 import { findRingProblems, ringConfig } from '../config/world_config.ts';
 import { findWorldGenProblems, worldGenConfig } from '../config/worldgen_config.ts';
 import { loadRecipes } from '../data/economy_repo.ts';
@@ -8,11 +10,17 @@ import { loadFieldData } from '../data/field_repo.ts';
 import { loadItemCatalog } from '../data/item_repo.ts';
 import { findFieldProblems } from '../field/parse.ts';
 import { EPIPHANY_PREFIX, UNLOCK_KINDS } from '../growth/unlocks.ts';
+import { findTraitProblems } from '../growth/traits.ts';
+import { loadTraitOptions } from '../data/entity_load.ts';
+import { loadRecruitData } from '../recruit/recruit_repo.ts';
+import { findTemplateProblems } from '../recruit/recruit_rules.ts';
 import { LOAD_TIERS } from '../inventory/bag.ts';
 import { LOOT_LINE_KEYS } from '../inventory/butcher.ts';
 import { findGatherProblems, gatherConfig } from '../config/gather_config.ts';
 import { FOOD_LINE_KEYS } from '../food/food_service.ts';
 import { GATHER_LINE_KEYS } from '../gather/gather_service.ts';
+import { findViceDataProblems } from '../vice/vice_check.ts';
+import { findBossProblems } from '../boss/boss_check.ts';
 import { createPool } from './pool.ts';
 import {
   BIOME_NAME_PREFIX,
@@ -83,8 +91,8 @@ export async function runStartupCheck(pool: pg.Pool): Promise<string[]> {
   const coins = Object.keys((config.get('coin_values') as Record<string, number> | undefined) ?? {});
   const moveNames = new Set(moves.rows.map((m) => m.move_name));
   const fields = await loadFieldData(pool);
-  const species = await pool.query<{ species_name: string; base_stats: Record<string, number>; ring_min: number; ring_max: number }>(
-    'SELECT species_name, base_stats, ring_min, ring_max FROM entity.species',
+  const species = await pool.query<{ species_name: string; main_stats: string[]; ring_min: number; ring_max: number }>(
+    'SELECT species_name, main_stats, ring_min, ring_max FROM entity.species',
   );
   const rings = config.get('world.rings');
   const standing = config.get('standing') as { favor_tiers?: number[] } | undefined;
@@ -121,6 +129,13 @@ export async function runStartupCheck(pool: pg.Pool): Promise<string[]> {
       standing?.favor_tiers?.length ?? 0,
     ),
     ...findCraftProblems(await loadRecipes(pool), new Set(catalog.keys()), lineKeys),
+    ...findTraitProblems(await loadTraitOptions(pool), lineKeys, config.get('elements')),
+    ...findTemplateProblems([...(await loadRecruitData(pool)).templates.values()],
+      new Map((await pool.query<{ n: string; c: string }>('SELECT move_name AS n, category AS c FROM moves.moves')).rows.map((r) => [r.n, r.c])),
+      new Set(catalog.keys()), Array.isArray(gearSlots) ? gearSlots.map((s: { slot: string }) => s.slot) : [], (config.get('elements') as string[]) ?? [],
+      new Set((await pool.query<{ n: string }>('SELECT race_name AS n FROM entity.races')).rows.map((r) => r.n))),
+    ...(await findViceDataProblems(pool, config.get('vice'), moveNames, lineKeys)),
+    ...(await findBossProblems(pool, config, moveNames, lineKeys)),
     ...[...GATHER_LINE_KEYS, ...FOOD_LINE_KEYS].filter((k) => !lineKeys.has(k)).map((k) => `${k}: no lines`),
     ...(config.has('gather') && config.has('food')
       ? [
@@ -129,10 +144,15 @@ export async function runStartupCheck(pool: pg.Pool): Promise<string[]> {
       ]
       : ['balance_config gather or food is missing']),
     ...(rings
-      ? findRingProblems(ringConfig(rings as Parameters<typeof ringConfig>[0]), species.rows.map((s) => ({
-        name: s.species_name, total: Object.values(s.base_stats).reduce((n, v) => n + v, 0), ringMin: s.ring_min, ringMax: s.ring_max,
-      })))
+      ? findRingProblems(ringConfig(rings as Parameters<typeof ringConfig>[0]), species.rows.map((s) => ({ name: s.species_name, ringMin: s.ring_min, ringMax: s.ring_max })))
       : ['balance_config world.rings is missing']),
+    ...(rings && config.has('creature.gen')
+      ? findCreatureGenProblems(creatureGenConfig(config.get('creature.gen') as Parameters<typeof creatureGenConfig>[0]), (rings as { count: number }).count,
+        species.rows.map((s) => ({ name: s.species_name, mainStats: s.main_stats ?? [] })))
+      : ['balance_config creature.gen is missing']),
+    ...(config.has('battle.formation')
+      ? findFormationProblems(formationConfig(config.get('battle.formation') as Parameters<typeof formationConfig>[0]))
+      : ['balance_config battle.formation is missing']),
     ...findBattleProblems(species.rows.map((r) => r.species_name), bodyTiers as Record<string, number[]>, lineKeys, tierKeys),
     ...fieldRefs.rows.flatMap((f) => [
       ...(fields.templates.has(f.template) ? [] : [`${f.what}: unknown field template ${f.template}`]),

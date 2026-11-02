@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import type { Progress } from '../growth/level_up.ts';
 import type { Loadout } from '../loadout/loadout.ts';
+import type { Trait, TraitOption } from '../growth/traits.ts';
 import { STATS, type Stat } from '../stats/derived.ts';
 
 // Reads one growing entity (player, recruit, summoner) from the database.
@@ -15,7 +16,10 @@ export type EntityState = {
   progress: Progress;
   loadout: Loadout;
   body: BodyNow | null; // null = full
+  slot: number; // battle formation slot, chosen in town
   unseen: Set<string>; // learned moves the owner has not looked at yet
+  traits: Trait[]; // modifiers are hidden: server only
+  raceResist: Map<string, number>; // `kind:target` -> mult from the race (entity.resistances owner_kind race)
 };
 
 export async function findEntityByName(pool: pg.Pool, kind: string, name: string): Promise<string | null> {
@@ -27,9 +31,9 @@ export async function findEntityByName(pool: pg.Pool, kind: string, name: string
 }
 
 export async function loadEntityState(pool: pg.Pool, entityId: string): Promise<EntityState> {
-  const [entity, stats, moves, recipes, slots, body] = await Promise.all([
-    pool.query<{ kind: string; name: string; body_parts: string[] | null; race: string | null }>(
-      `SELECT e.kind, e.name, coalesce(r.body_parts, s.body_parts) AS body_parts, r.race_name AS race
+  const [entity, stats, moves, recipes, slots, body, traits, resist] = await Promise.all([
+    pool.query<{ kind: string; name: string; slot: number; body_parts: string[] | null; race: string | null }>(
+      `SELECT e.kind, e.name, e.slot, coalesce(r.body_parts, s.body_parts) AS body_parts, r.race_name AS race
        FROM entity.entities e
        LEFT JOIN entity.races r ON r.id = e.race_id
        LEFT JOIN entity.species s ON s.id = e.species_id
@@ -60,6 +64,16 @@ export async function loadEntityState(pool: pg.Pool, entityId: string): Promise<
       'SELECT hp, stamina, mana FROM entity.entity_body WHERE entity_id = $1',
       [entityId],
     ),
+    pool.query<{ trait_name: string; modifiers: Record<string, unknown>; params: Record<string, unknown> }>(
+      `SELECT t.trait_name, t.modifiers, et.params FROM entity.entity_traits et JOIN entity.traits t ON t.id = et.trait_id
+       WHERE et.entity_id = $1`,
+      [entityId],
+    ),
+    pool.query<{ target_kind: string; target_id: string; mult: string }>(
+      `SELECT x.target_kind, x.target_id, x.mult FROM entity.entities e
+       JOIN entity.resistances x ON x.owner_kind = 'race' AND x.owner_id = e.race_id WHERE e.id = $1`,
+      [entityId],
+    ),
   ]);
 
   const row = entity.rows[0];
@@ -73,6 +87,7 @@ export async function loadEntityState(pool: pg.Pool, entityId: string): Promise<
     id: entityId,
     kind: row.kind,
     name: row.name,
+    slot: Number(row.slot ?? 1),
     bodyParts: row.body_parts ?? [],
     progress: {
       stats: Object.fromEntries(
@@ -85,5 +100,15 @@ export async function loadEntityState(pool: pg.Pool, entityId: string): Promise<
     loadout: new Map(slots.rows.map((s) => [s.slot, s.move_name])),
     body: b ? { hp: Number(b.hp), stamina: Number(b.stamina), mana: Number(b.mana) } : null,
     unseen: new Set(moves.rows.filter((m) => !m.seen).map((m) => m.move_name)),
+    traits: traits.rows.map((t) => ({ name: t.trait_name, modifiers: t.modifiers ?? {}, params: t.params ?? {} })),
+    raceResist: new Map(resist.rows.map((r) => [`${r.target_kind}:${r.target_id}`, Number(r.mult)])),
   };
+}
+
+// Every trait the quota roll may pick from (weight 0 = granted only, never rolled).
+export async function loadTraitOptions(pool: pg.Pool): Promise<TraitOption[]> {
+  const res = await pool.query<{ trait_name: string; cost: number; weight: number; modifiers: Record<string, unknown> }>(
+    'SELECT trait_name, cost, weight, modifiers FROM entity.traits ORDER BY trait_name',
+  );
+  return res.rows.map((r) => ({ name: r.trait_name, cost: Number(r.cost), weight: Number(r.weight), modifiers: r.modifiers ?? {} }));
 }

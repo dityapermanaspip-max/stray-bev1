@@ -7,6 +7,9 @@ import { BattleRoom } from './battle_room.ts';
 import { FIELD_ROOM, type WhereAnswer } from '../../shared/field.ts';
 import { FieldRoom } from './field_room.ts';
 import { startTicker } from './ticker.ts';
+import { reloadVices } from '../vice/vice_finder.ts';
+import { fillMovelessVices } from '../vice/vice_repo.ts';
+import { createRng } from '../util/rng.ts';
 import { loadGameWorld, placePlayer } from './world.ts';
 
 // Game server (Colyseus). Dev only for now: players join by name, no password, localhost only.
@@ -29,6 +32,9 @@ type Res = { set(key: string, value: string): Res; status(code: number): Res; js
 const pool = createPool();
 FieldRoom.world = await loadGameWorld(pool);
 BattleRoom.world = FieldRoom.world;
+const filled = await fillMovelessVices(pool, FieldRoom.world.data.cfg, FieldRoom.world.roundId, createRng(Date.now() >>> 0));
+if (filled > 0) console.log(`Gave moves to ${filled} vice(s).`);
+await reloadVices(pool, FieldRoom.world.roundId); // where the living vices stand (a cache; the DB is the truth)
 const stale = await clearBattles(pool); // battles are not resumed after a restart yet
 if (stale > 0) console.log(`Cleared ${stale} unfinished battle(s).`);
 

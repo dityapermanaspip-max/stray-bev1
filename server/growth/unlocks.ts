@@ -14,6 +14,7 @@ export type UnlockRule = {
 export type UnlockContext = { trainerTags: ReadonlySet<string> };
 
 export type Learned = { move: string; kind: string };
+type Known = Pick<Progress, 'moves' | 'recipes'>; // all the checker reads
 
 // Kinds this checker understands. Each needs an epiphany_<kind> line pool.
 export const UNLOCK_KINDS = ['mastery', 'trainer', 'scroll', 'combo'];
@@ -21,7 +22,7 @@ export const EPIPHANY_PREFIX = 'epiphany_';
 
 const NO_CONTEXT: UnlockContext = { trainerTags: new Set() };
 
-function conditionMet(rule: UnlockRule, progress: Progress, ctx: UnlockContext): boolean {
+function conditionMet(rule: UnlockRule, progress: Known, ctx: UnlockContext): boolean {
   const p = rule.params;
   switch (rule.kind) {
     case 'mastery':
@@ -37,7 +38,7 @@ function conditionMet(rule: UnlockRule, progress: Progress, ctx: UnlockContext):
 }
 
 // Moves whose rules now pass and that the entity does not know yet.
-export function findUnlocks(rules: UnlockRule[], progress: Progress, ctx: UnlockContext = NO_CONTEXT): Learned[] {
+export function findUnlocks(rules: UnlockRule[], progress: Known, ctx: UnlockContext = NO_CONTEXT): Learned[] {
   const groups = new Map<string, UnlockRule[]>();
   for (const rule of rules) {
     if (progress.moves.has(rule.move)) continue;

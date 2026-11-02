@@ -28,11 +28,12 @@ if (!roundId) throw new Error('no dev round: run npm run db:seed');
 const [catalog, loot, recipes, fields] = await Promise.all([loadItemCatalog(pool), loadLoot(pool), loadRecipes(pool), loadFieldData(pool)]);
 const hexes = (await pool.query<HexInfo>('SELECT id::text AS id, q, r, ring, biome FROM world.hexes WHERE round_id = $1', [roundId])).rows;
 const pop = await loadPopulation(pool, hexes.map((h) => h.id));
-const eco = await pool.query<{ town_ref: string; jobs: Record<string, number>; population: number }>('SELECT town_ref, jobs, population FROM world.town_economy WHERE town_ref = ANY($1)', [hexes.map((h) => h.id)]);
+const eco = await pool.query<{ town_ref: string; hex: string; jobs: Record<string, number>; population: number }>(
+  'SELECT e.town_ref, t.hex_id::text AS hex, e.jobs, e.population FROM world.town_economy e JOIN world.towns t ON t.id::text = e.town_ref WHERE t.round_id = $1', [roundId]);
 const towns: TickTown[] = [];
 for (const e of eco.rows) {
   const town = await loadTown(pool, cfg.economy, catalog, e.town_ref);
-  if (town) towns.push({ town, population: e.population, jobs: e.jobs });
+  if (town) towns.push({ town, hex: e.hex, population: e.population, jobs: e.jobs });
 }
 await pool.end();
 

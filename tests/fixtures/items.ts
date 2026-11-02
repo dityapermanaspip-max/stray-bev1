@@ -21,6 +21,12 @@ export const catalog: ItemCatalog = new Map([
     weight: 0.5, stack: true, default_quality: 'improvised',
     wield: { weapon_type: 'thrown', power: 3, hands: 1, thrown: true, grants_move: 'basic_throw' },
   }),
+  parseItem('iron_knife', 'weapon', 'knife', iron, {
+    weight: 0.5, wield: { weapon_type: 'knife', power: 4, hands: 1, grants_move: 'knife_stab', off_grants_move: 'twin_stab' },
+  }),
+  parseItem('buckler', 'weapon', 'shield', iron, { weight: 2, wield: { weapon_type: 'shield', power: 2, hands: 1, off_hand_only: true } }),
   parseItem('copper_ring', 'accessory', 'ring', copper, { weight: 0.05, worn: { slot: 'ring' } }),
+  parseItem('tonfa', 'weapon', 'tonfa', iron, { weight: 2, wield: { weapon_type: 'tonfa', power: 3, hands: 2, needs_dual: true, grants_move: 'tonfa_strike' } }),
+  parseItem('arrow', 'ammo', 'arrow', iron, { weight: 0.05, stack: true, ammo_type: 'arrow' }),
   parseItem('blanket', 'material', 'blanket', null, { weight: 1.5 }),
 ].map((item) => [item.name, item]));

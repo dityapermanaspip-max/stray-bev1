@@ -6,7 +6,10 @@ import type { ItemDef } from '../inventory/items.ts';
 // so whatever a town has plenty of also fetches little there. A town keeps much more of its specialty goods
 // (bigger capacity, started fuller): they are cheap there, and one sale barely moves their price.
 
-export const tradeable = (cfg: EconomyConfig, item: ItemDef) => item.value > 0 && !item.taboo && cfg.capacity[item.type] !== undefined;
+// taboo: what this town's folk refuse (its culture): item types, shapes or goods families (elves: meat, carcasses).
+export const tradeable = (cfg: EconomyConfig, item: ItemDef, taboo: readonly string[] = []) =>
+  item.value > 0 && !item.taboo && cfg.capacity[item.type] !== undefined &&
+  !taboo.some((t) => t === item.type || t === item.shape || item.goods.includes(t));
 
 // The shop shelf holds finished goods only: gear and tools (shop_sells types) and whatever a craftsman makes.
 // Raw catch and materials it buys sit in its store for the craftsmen; bring your own to have something made.

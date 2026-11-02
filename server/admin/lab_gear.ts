@@ -30,7 +30,7 @@ export function labInventory(
     if (!g.slot) continue;
     const def = catalog.get(g.item)!;
     const ref: GearRef = def.stack ? { stack: stackKey(g.item, def.defaultQuality) } : { piece: inventory.pieces[firstNew].id };
-    const change = equipGear(cfg, catalog, inventory, progress, ref, ANYWHERE, g.slot);
+    const change = equipGear(cfg, catalog, inventory, progress, ref, ANYWHERE, g.slot, true); // lab fighters may dual wield
     if (typeof change === 'string') return { inventory, error: `${where}: ${g.item} to ${g.slot} refused (${change})` };
   }
   return { inventory, error: null };

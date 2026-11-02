@@ -29,7 +29,7 @@ const CRAFTED = new Set(['grilled_chicken']); // what recipes make: on the shelf
 const noSafe = { ...cfg, economy: { ...cfg.economy, safeFill: 0, specialtySafeFill: 0 } }; // shelf tests without a safe stock
 
 function town(over: Partial<Town> = {}): Town {
-  const t: Town = { ref: 'dev', purse: 1000, maxBuy: 100, specialties: ['chicken'], facilities: {}, stock: new Map(), ...over };
+  const t: Town = { ref: 'dev', purse: 1000, maxBuy: 100, specialties: ['chicken'], taboo: [], facilities: {}, stock: new Map(), ...over };
   for (const name of ['chicken_meat', 'grilled_chicken', 'oak_log', 'gold_blade', 'chicken_carcass']) {
     const def = catalog.get(name)!;
     t.stock.set(stackKey(name, def.defaultQuality), { item: name, quality: def.defaultQuality, qty: startQty(cfg.economy, def, t.specialties) });

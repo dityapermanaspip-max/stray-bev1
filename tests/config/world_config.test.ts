@@ -14,8 +14,11 @@ test('a wild hex starts with natives and corrupted rolled in their ranges', () =
   assert.deepEqual(startCounts(rings, 1000, () => 0.5), { natives: 450, corrupted: 400 });
 });
 
-test('a species must fit the band of every ring it lives in', () => {
-  assert.deepEqual(findRingProblems(rings, [{ name: 'cat', total: 17, ringMin: 4, ringMax: 4 }]), []);
-  assert.deepEqual(findRingProblems(rings, [{ name: 'cat', total: 17, ringMin: 3, ringMax: 4 }]), ['species cat: total 17 outside ring 3 (30 +- 5)']);
-  assert.equal(findRingProblems(rings, [{ name: 'x', total: 30, ringMin: 0, ringMax: 3 }]).length, 3); // bad range, too weak for rings 2 and 1
+test('a species born corrupted starts with the whole head count corrupted and no natives', () => {
+  assert.deepEqual(startCounts(rings, 1000, () => 0.5, true), { natives: 0, corrupted: 850 });
+});
+
+test('a species must live inside the round rings', () => {
+  assert.deepEqual(findRingProblems(rings, [{ name: 'cat', ringMin: 1, ringMax: 4 }]), []);
+  assert.deepEqual(findRingProblems(rings, [{ name: 'x', ringMin: 0, ringMax: 3 }]), ['species x: rings 0-3 outside 1-4']);
 });

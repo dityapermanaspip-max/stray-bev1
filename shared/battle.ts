@@ -8,7 +8,8 @@ export type Word = { tier: number; text: string | null };
 export type BattleFighter = {
   id: string;
   side: 'party' | 'enemy';
-  row: 'front' | 'back';
+  slot: number; // battle formation slot (front slots first, then back)
+  row: 'front' | 'back'; // worked out from the slot
   name: string;
   you: boolean;
   corrupted: boolean;
@@ -19,12 +20,13 @@ export type BattleFighter = {
 };
 
 // self | one_enemy | enemy_row | all_enemies | one_ally | all_allies
-export type BattleMoveView = { move: string; name: string; slot: number; target: string };
+export type BattleMoveView = { move: string; name: string; slot: number; target: string; front: boolean }; // front: only usable from the front row
 
 export type BattleView = {
   you: string;
   fighters: BattleFighter[];
   slots: number; // loadout size
+  formation: { front: number; back: number }; // slots per row on each side
   moves: BattleMoveView[]; // own equipped moves, in slot order
   moveNames: Record<string, string>; // every move anyone here may use
   ready: boolean;
@@ -46,6 +48,7 @@ export type BattleEventView =
   | { type: 'downed'; entity: string }
   | { type: 'learned'; move: string; name: string }
   | { type: 'counter'; entity: string; move: string; target: string }
+  | { type: 'moved'; entity: string; slot: number; row: 'front' | 'back' } // pushed to another slot
   | { type: 'ready' }
   | { type: 'end'; won: boolean };
 

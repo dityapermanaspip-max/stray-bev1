@@ -96,7 +96,7 @@ export async function markPushover(db: Db, cfg: BalanceConfig, entityId: string,
 // Fame for a deed on hex (q, r): every town of the round within reach gets its share.
 export async function addFame(db: Db, cfg: StandingConfig, roundId: string, entityId: string, from: { q: number; r: number }, amount: number): Promise<void> {
   const towns = (await db.query<{ ref: string; q: number; r: number }>(
-    "SELECT id::text AS ref, q, r FROM world.hexes WHERE round_id = $1 AND field_kind = 'town'", [roundId],
+    'SELECT t.id::text AS ref, h.q, h.r FROM world.towns t JOIN world.hexes h ON h.id = t.hex_id WHERE t.round_id = $1', [roundId],
   )).rows;
   const shares = fameShares(cfg, from, towns, amount);
   if (shares.length === 0) return;

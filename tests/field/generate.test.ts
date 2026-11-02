@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { corridorBlend, generateField } from '../../server/field/generate.ts';
 import { findFieldProblems, parseBiome, parseTemplate } from '../../server/field/parse.ts';
+import { canStep } from '../../server/field/climb.ts';
 import { reachable } from '../../server/field/reach.ts';
 import type { FieldGrid, FieldSpec } from '../../server/field/types.ts';
 
@@ -69,15 +70,49 @@ test('a corridor chain shifts from biome A to biome B along the way', () => {
 });
 
 test('bad templates and biomes are reported', () => {
-  const bad = parseBiome('swamp', { ground: {}, obstacle_density: 0.9, hills: { max: 4, scale: 0, steep: 9 }, lowland: { share: 0.5 }, slope_share: 2 });
+  const bad = parseBiome('swamp', { ground: {}, obstacle_density: 0.9, hills: { max: 6, scale: 0, steep: 9 }, lowland: { share: 0.5 } });
   assert.deepEqual(findFieldProblems([parseTemplate('x', 'open', 10, 10, { obstacle_mult: -1 })], [bad]), [
     'template x: obstacle_mult must be 0 or more',
     'biome swamp: needs at least one ground terrain',
     'biome swamp: obstacle_density must be 0-0.5',
     'biome swamp: has density but no obstacle terrain',
-    'biome swamp: hills need max 0-3 and scale >= 1',
+    'biome swamp: hills need max 0-5 and scale >= 1',
     'biome swamp: hills steep must be 1-8',
     'biome swamp: has lowland share but no lowland terrain',
-    'biome swamp: slope_share must be 0-1',
   ]);
+});
+
+test('a hex that holds a town: a walled block in the middle, its gate below it, all reachable', () => {
+  for (let seed = 1; seed <= 20; seed++) {
+    const g = generateField({ ...open(seed), gate: true });
+    const cx = Math.floor(g.width / 2);
+    const cy = Math.floor(g.height / 2);
+    const gate = g.exits.find((e) => e.id === 'gate')!;
+    assert.deepEqual({ x: gate.x, y: gate.y }, { x: cx, y: cy + 2 });
+    assert.equal(g.tiles[cy * g.width + cx].terrain, 'building');
+    assert.equal(g.tiles[cy * g.width + cx].walkable, false);
+    const seen = reachable(g, g.spawn);
+    assert.ok(seen.has(gate.y * g.width + gate.x), `seed ${seed}: gate reachable`);
+    assert.equal(g.exits.length, 7);
+  }
+});
+
+test('final grids: water only at height 0, flat blocks, moves work both ways and climb at most one level', () => {
+  for (let seed = 1; seed <= 30; seed++) {
+    for (const spec of [open(seed, meadow), open(seed, grove), { ...open(seed, meadow), template: corridor, biomeB: grove, blend: { from: 0, to: 1 } }]) {
+      const g = generateField(spec);
+      g.tiles.forEach((t, i) => {
+        if (wet.has(t.terrain)) assert.equal(t.height, 0, `seed ${seed}: water at ${i}`);
+        const x = i % g.width, y = Math.floor(i / g.width);
+        for (const [dx, dy] of [[1, 0], [0, 1]]) {
+          if (x + dx >= g.width || y + dy >= g.height) continue;
+          const n = g.tiles[(y + dy) * g.width + x + dx];
+          const legal = canStep(g, { x, y }, { x: x + dx, y: y + dy });
+          assert.equal(legal, canStep(g, { x: x + dx, y: y + dy }, { x, y }), 'moves work both ways');
+          assert.equal(t.slope, null);
+          if (legal) assert.ok(Math.abs(t.height - n.height) <= 1, `seed ${seed}: step of two at ${i}`);
+        }
+      });
+    }
+  }
 });

@@ -2,6 +2,7 @@ import { loadBalance } from '../config/balance.ts';
 import { inTransaction } from '../data/entity_save.ts';
 import { createPool } from '../db/pool.ts';
 import { createRng } from '../util/rng.ts';
+import { loadBiomeSpecies } from './biome_species.ts';
 import { planWorld } from './plan.ts';
 import { writeWorld } from './worldgen_repo.ts';
 
@@ -16,8 +17,7 @@ if (!Number.isInteger(seed)) throw new Error('--seed needs a whole number');
 const pool = createPool();
 try {
   const cfg = await loadBalance(pool);
-  const species = (await pool.query<{ id: string; ring_min: number; ring_max: number }>('SELECT id::text, ring_min, ring_max FROM entity.species')).rows
-    .map((s) => ({ id: s.id, ringMin: s.ring_min, ringMax: s.ring_max }));
+  const species = await loadBiomeSpecies(pool);
   const rng = createRng(seed);
   const plan = planWorld(cfg.worldGen, cfg.rings.count, rng);
   const roundId = await inTransaction(pool, (client) => writeWorld(client, cfg, plan, seed, species, rng));

@@ -30,11 +30,14 @@ export type BattleView = {
   moves: BattleMoveView[]; // own equipped moves, in slot order
   moveNames: Record<string, string>; // every move anyone here may use
   ready: boolean;
+  ground: { biome: string; terrain: string }; // the field tile the fight is on; the board is drawn from its biome
 };
 
 // Client -> server: room.request('view') answers with BattleView; send('act', ActRequest) queues a move.
 // The move runs when the gauge is full; a refused move comes back as a 'line'.
 export type ActRequest = { move: string; target: string };
+// send('auto', AutoRequest): on = the party leader fights by the same rule as the AI (a random usable equipped move; heals a hurt friend first).
+export type AutoRequest = { on: boolean };
 
 // Server -> client: 'events' (a batch per tick), 'line' (a refusal sentence), 'result' (once, at the end).
 export type BattleEventView =

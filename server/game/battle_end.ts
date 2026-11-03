@@ -1,3 +1,4 @@
+import { baseRef } from '../interior/interior_ref.ts';
 import { bodyOf } from '../battle/from_state.ts';
 import { deleteBattle } from '../data/battle_repo.ts';
 import { saveBattleResults } from '../data/entity_save.ts';
@@ -60,7 +61,7 @@ export async function finishFight({ world, rng }: EndWorld, f: Fight, battleId: 
   const bossFell = won && f.order.foes.some((foe, i) => foe.boss && f.foes[i].hp <= 0);
   if (bossFell) note('boss.fell');
   const { fieldRef } = f.order;
-  const home = populationHome(world, fieldRef);
+  const home = populationHome(world, baseRef(fieldRef)); // fought in a room: the creatures are its field's
   const saved = won ? null : await loadWake(world.pool, f.player.id);
   const wakeRef = won ? null : saved && inRound(world, saved) ? saved : fieldRef; // a town of an ended round does not count
   const wakeSpot = wakeRef ? (await gridFor(world, wakeRef))?.grid.spawn ?? null : null;
@@ -72,7 +73,7 @@ export async function finishFight({ world, rng }: EndWorld, f: Fight, battleId: 
       ...[...f.vices].map(([id, v]) => ({ entityId: id, progress: v.progress, body: null })), // a vice keeps what it learned; rests to full
     ],
     async (client) => {
-      if (left.length > 0) await insertCorpses(client, fieldRef, left);
+      if (left.length > 0) await insertCorpses(client, baseRef(fieldRef), left);
       if (home && kills.length > 0) await removeKilled(client, home, kills);
       if (wake) await savePosition(client, f.player.id, { fieldRef: wake.ref, x: wake.x, y: wake.y });
       await deleteBattle(client, battleId);

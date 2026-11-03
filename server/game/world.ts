@@ -11,6 +11,8 @@ import { loadPopulation } from '../data/population_repo.ts';
 import { loadPosition, savePosition, type Position } from '../data/position_repo.ts';
 import { loadRecipes, type Recipe } from '../data/economy_repo.ts';
 import { loadBattleData, loadSpecies, type SpeciesDef } from '../data/species_repo.ts';
+import { buildInterior } from '../interior/interior_grid.ts';
+import { parseInterior } from '../interior/interior_ref.ts';
 import { generateField } from '../field/generate.ts';
 import { loadNodeLoot } from '../gather/gather_repo.ts';
 import { placeNodes } from '../field/nodes.ts';
@@ -59,11 +61,20 @@ export async function loadGameWorld(pool: pg.Pool): Promise<GameWorld> {
 export async function gridFor(world: GameWorld, ref: string): Promise<{ grid: FieldGrid; kind: FieldKind } | null> {
   const cached = world.grids.get(ref);
   if (cached) return cached;
+  const room = parseInterior(ref);
+  if (room) { // a room: built from its layout alone
+    const layout = world.data.cfg.interior.rooms[room.kind];
+    if (!layout || !inRound(world, room.parent)) return null;
+    const entry = { grid: buildInterior(layout), kind: 'interior' as const };
+    world.grids.set(ref, entry);
+    return entry;
+  }
   const spec = await fieldSpec(world.pool, world.fields, ref);
   if (!spec) return null;
   const grid = generateField(spec);
   const near = Object.fromEntries(Object.entries(world.data.cfg.gather.kinds).map(([k, v]) => [k, v.near]));
-  grid.nodes = placeNodes(grid, spec, near, (k) => !!world.data.cfg.gather.kinds[k]); // only kinds in config
+  const wild = world.data.cfg.interior.wild; // a camp or cave is a node too: walked beside, then gone into
+  grid.nodes = placeNodes(grid, spec, near, (k) => !!world.data.cfg.gather.kinds[k] || !!wild[k]); // only kinds in config
   const entry = { grid, kind: spec.template.kind };
   world.grids.set(ref, entry);
   return entry;
@@ -74,13 +85,17 @@ export function fieldView(ref: string, kind: FieldKind, g: FieldGrid): FieldView
     ref, kind, width: g.width, height: g.height,
     tiles: g.tiles.map((t) => ({ t: t.terrain, b: t.biome, h: t.height, w: t.walkable, s: t.slope ?? -1, safe: !!t.safe, door: t.service ?? null })),
     exits: g.exits.map((e) => ({ id: e.id, x: e.x, y: e.y })),
-    nodes: g.nodes.map((n) => ({ x: n.x, y: n.y, kind: n.kind })),
+    nodes: g.nodes.filter((n) => n.kind !== 'npc').map((n) => ({ x: n.x, y: n.y, kind: n.kind })),
+    npcs: [],
   };
 }
 
-// A field of the round being played (hex, town or corridor).
-export const inRound = (world: GameWorld, ref: string) =>
-  world.links.hexes.has(ref) || world.links.towns.has(ref) || world.links.borders.some((b) => b.corridors.includes(ref));
+// A field of the round being played (hex, town or corridor), or a room hanging off one.
+export function inRound(world: GameWorld, ref: string): boolean {
+  const room = parseInterior(ref);
+  if (room) return !!world.data.cfg.interior.rooms[room.kind] && inRound(world, room.parent);
+  return world.links.hexes.has(ref) || world.links.towns.has(ref) || world.links.borders.some((b) => b.corridors.includes(ref));
+}
 
 // Where a stray is summoned: the first corridor out of a town on the outermost ring that has towns, at its exit
 // into the town. Which way they walk first is their destiny. Without such a corridor: the hex nearest the centre.

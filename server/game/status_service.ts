@@ -2,12 +2,13 @@ import { hasTraitFlag } from '../growth/traits.ts';
 import { loadEntityState } from '../data/entity_load.ts';
 import { markMovesSeen, saveGear, saveLoadout, saveSlot } from '../data/entity_save.ts';
 import { loadInventory } from '../data/item_repo.ts';
+import { removePiece, removeStack, stackKey } from '../inventory/bag.ts';
 import { equipGear, equipLineKey, unequipGear, unequipLineKey, type GearRef } from '../inventory/gear.ts';
 import { canSwap, equip, unequip, type SwapPlace } from '../loadout/loadout.ts';
 import { isSlot } from '../battle/formation.ts';
 import { buildStatusView } from '../status/status_view.ts';
 import type { Rng } from '../util/rng.ts';
-import type { FormationRequest, GearRequest, LoadoutRequest, StatusPanel } from '../../shared/town.ts';
+import type { DropRequest, FormationRequest, GearRequest, LoadoutRequest, StatusPanel } from '../../shared/town.ts';
 import type { GameWorld } from './world.ts';
 
 // The status window from the field: body words, moves and slots, the bag. Loadout and gear changes are
@@ -20,16 +21,17 @@ const say = (c: Ctx, key: string) => c.world.data.lines.pick(c.rng, key, 0, 'sel
 const refusal = (kind: 'loadout' | 'gear' | 'formation', error: string) =>
   error === 'not_in_town' ? 'loadout.not_here' : error === 'in_battle' ? 'loadout.in_battle' : `${kind}.${error}`;
 
-export async function statusPanel(c: Ctx, entityId: string, place: SwapPlace, line: string | null = null): Promise<StatusPanel> {
+// own: the player's own window (moves seen are marked); else a companion's, read only, with their name in `who`.
+export async function statusPanel(c: Ctx, entityId: string, place: SwapPlace, line: string | null = null, own = true): Promise<StatusPanel> {
   const { cfg, lines } = c.world.data;
   const [state, inventory] = await Promise.all([loadEntityState(c.world.pool, entityId), loadInventory(c.world.pool, entityId)]);
   const view = buildStatusView({
     cfg, lines, rng: c.rng, speaker: 'self', progress: state.progress, loadout: state.loadout, body: state.body, unseen: state.unseen,
     bag: { catalog: c.world.catalog, inventory },
   });
-  await markMovesSeen(c.world.pool, entityId);
+  if (own) await markMovesSeen(c.world.pool, entityId);
   const { front, back } = cfg.formation;
-  return { ...view, formation: { slot: state.slot, front, back }, canSwap: canSwap(cfg, place) === null, line };
+  return { ...view, formation: { slot: state.slot, front, back }, canSwap: own && canSwap(cfg, place) === null, line, who: own ? null : state.name };
 }
 
 export async function changeLoadout(c: Ctx, entityId: string, place: SwapPlace, req: LoadoutRequest): Promise<StatusPanel> {
@@ -68,4 +70,22 @@ export async function changeSlot(c: Ctx, entityId: string, place: SwapPlace, req
   if (error) return statusPanel(c, entityId, place, say(c, refusal('formation', error)));
   await saveSlot(c.world.pool, entityId, slot);
   return statusPanel(c, entityId, place);
+}
+
+// Throws away part of a stack or one piece. Worn things stay (take them off first); keys are bound and stay.
+export async function dropItem(c: Ctx, entityId: string, place: SwapPlace, req: DropRequest): Promise<StatusPanel> {
+  const [state, inv] = await Promise.all([loadEntityState(c.world.pool, entityId), loadInventory(c.world.pool, entityId)]);
+  const ref = String(req?.ref ?? '');
+  const piece = inv.pieces.find((p) => p.id === ref);
+  const stack = inv.stacks.get(ref);
+  const held = piece ?? stack;
+  const refuse = (key: string) => statusPanel(c, entityId, place, say(c, key));
+  if (!held) return refuse('drop.not_held');
+  if (held.slot) return refuse('drop.worn');
+  if (c.world.catalog.get(held.item)?.type === 'key') return refuse('drop.key');
+  const qty = Math.floor(Number(req?.qty));
+  const error = piece ? removePiece(inv, ref) : removeStack(inv, stackKey(held.item, (stack as { quality: string }).quality), qty);
+  if (error) return refuse('drop.not_held');
+  await saveGear(c.world.pool, entityId, inv, state.progress);
+  return statusPanel(c, entityId, place, say(c, 'drop.done'));
 }

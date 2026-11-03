@@ -1,6 +1,6 @@
 // Field data. A field is generated from template + biome(s) + seed; only those are stored.
 
-export type FieldKind = 'open' | 'corridor' | 'town';
+export type FieldKind = 'open' | 'corridor' | 'town' | 'interior'; // interior: a small room (server/interior)
 
 // Shape: size, kind, and how obstacle density scales here. Towns add a layout for their safe middle.
 export type FieldTemplate = { name: string; kind: FieldKind; width: number; height: number; obstacleMult: number; town: TownLayout | null };

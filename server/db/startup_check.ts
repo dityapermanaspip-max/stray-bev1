@@ -39,6 +39,9 @@ export const SERVICE_NAME_PREFIX = 'service_name_';
 export const BIOME_NAME_PREFIX = 'biome_name_'; // world map biome names
 export const NODE_NAME_PREFIX = 'node_name_'; // resource node kinds (gather config)
 export const VICE_NAME_PREFIX = 'vice_name_'; // + vice type: what a player calls a vice of that type
+export const FAVOR_NAME_PREFIX = 'favor_name_'; // + tier 0..10: the word for a favor tier (exactly one line)
+export const GEAR_SLOT_NAME = 'gear_slot_'; // + a gear slot: its name (exactly one line)
+export const TALK_OPT_PREFIX = 'talk_opt_'; // + a talk choice: its word on the button (exactly one line)
 export const BOSS_NAME = 'boss_name_heart'; // what a player calls the boss (a name key: one line is enough)
 export const BATTLE_LINE_KEYS = ['battle.won', 'battle.lost', 'battle.cannot'];
 export const TOWN_LINE_KEYS = [
@@ -47,14 +50,18 @@ export const TOWN_LINE_KEYS = [
   'town.craft.done', 'town.craft.missing', 'town.craft.cannot_pay',
   'ask.door', 'ask.exit', // the yes / no question before a door or an exit (game/ask.ts)
   // the shopkeeper's standing (standing/shop_standing.ts); greetings also need tiers 1-3 (checked below)
-  'town.shop.greet', 'town.shop.haggle_won', 'town.shop.haggle_lost', 'town.shop.generous', 'town.shop.pushover',
+  'town.shop.greet', 'town.shop.refuse',
+  // talking to, gifting, hiring and recruiting NPCs (recruit/companions.ts)
+  'npc.talk', 'npc.tired', 'npc.tier_up', 'npc.gift', 'npc.gift_no',
+  'npc.greet', 'ask.wild', 'wild.rested', // rooms: an NPC's greeting, the question at a camp or cave, a night there
+  'recruit.refuse', 'recruit.hired', 'recruit.joined', 'recruit.full', 'recruit.no_money', 'recruit.paid', 'recruit.dismissed', 'town.shop.haggle_won', 'town.shop.haggle_lost', 'town.shop.generous', 'town.shop.pushover',
   // status window refusals (game/status_service.ts)
   'loadout.in_battle', 'loadout.bad_slot', 'loadout.unknown_move', 'loadout.not_slottable', 'gear.not_held', 'gear.not_wearable', 'gear.bad_slot', 'gear.no_dual_wield',
-  'formation.bad_slot',
+  'formation.bad_slot', 'drop.done', 'drop.not_held', 'drop.worn', 'drop.key',
 ];
 // A trait has one name and one flavor sentence (shown by the crystal ball).
 const NAME_PREFIXES = [NAME_PREFIX, ITEM_NAME_PREFIX, SPECIES_NAME_PREFIX, BODY_WORD_PREFIX, SERVICE_NAME_PREFIX, BIOME_NAME_PREFIX, NODE_NAME_PREFIX, VICE_NAME_PREFIX,
-  TRAIT_NAME_PREFIX, TRAIT_FLAVOR_PREFIX];
+  TRAIT_NAME_PREFIX, TRAIT_FLAVOR_PREFIX, FAVOR_NAME_PREFIX, TALK_OPT_PREFIX, GEAR_SLOT_NAME];
 const isNameKey = (key: string) => key === BOSS_NAME || NAME_PREFIXES.some((p) => key.startsWith(p));
 const isSingleLineKey = (key: string) => isNameKey(key) || key.startsWith(ARRIVAL_PREFIX);
 
@@ -223,6 +230,20 @@ export function findTownLineProblems(services: string[], lineKeys: Set<string>, 
     ...[...new Set(services)].filter((s) => !lineKeys.has(SERVICE_NAME_PREFIX + s)).map((s) => `service ${s}: no ${SERVICE_NAME_PREFIX} line`),
     ...TOWN_LINE_KEYS.filter((k) => !lineKeys.has(k)).map((k) => `${k}: no lines`),
     ...greet.map((t) => `town.shop.greet tier ${t}: no lines`),
+  ];
+}
+
+// The favor ladder: a word for every tier from stranger up, and a name pool (male, female, last) for every race.
+export function findLadderProblems(tiers: number, lineKeys: Set<string>, races: string[], pools: Map<string, { male: number; female: number; last: number }>): string[] {
+  return [
+    ...Array.from({ length: tiers + 1 }, (_, t) => t).filter((t) => !lineKeys.has(FAVOR_NAME_PREFIX + t)).map((t) => `favor tier ${t}: no ${FAVOR_NAME_PREFIX} line`),
+    ...races.flatMap((r) => {
+      const p = pools.get(r);
+      return !p ? [`race ${r}: no names`] : [
+        ...(p.male > 0 ? [] : [`race ${r}: no male first names`]), ...(p.female > 0 ? [] : [`race ${r}: no female first names`]),
+        ...(p.last > 0 ? [] : [`race ${r}: no last names`]),
+      ];
+    }),
   ];
 }
 

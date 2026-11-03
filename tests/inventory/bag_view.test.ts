@@ -14,6 +14,7 @@ const line = (condition_key: string, tier: number, text: string) =>
 const lines = new LinePicker([
   line('load', 1, 'My pack is light.'),
   line('item_name_iron_hammer', 0, 'Iron hammer'),
+  line('gear_slot_main_hand', 0, 'Main hand'),
   line('item_name_river_stone', 0, 'River stone'),
 ]);
 
@@ -31,6 +32,9 @@ test('the bag view shows names, counts, slots, load and condition tiers, and no 
     ['Iron hammer', 1, 'main_hand', 2],
     ['River stone', 7, null, null],
   ]);
+  const hand = view.slots.find((s) => s.slot === 'main_hand')!;
+  assert.deepEqual([hand.label, hand.accepts], ['Main hand', 'hand']);
+  assert.deepEqual(view.items.map((i) => [i.fits, i.droppable]), [['hand', true], ['hand', true]]);
   const text = JSON.stringify(view);
   for (const banned of ['33', '120', 'weight', 'durability', 'power', '6.5']) assert.ok(!text.includes(banned), `leaks ${banned}`);
 });

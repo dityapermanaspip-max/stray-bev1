@@ -8,12 +8,13 @@ export const FIELD_ROOM = 'field';
 export type FieldTileView = { t: string; b: string; h: number; w: boolean; s: number; safe: boolean; door: string | null };
 export type FieldView = {
   ref: string;
-  kind: 'open' | 'corridor' | 'town';
+  kind: 'open' | 'corridor' | 'town' | 'interior';
   width: number;
   height: number;
   tiles: FieldTileView[]; // row-major: y * width + x
   exits: { id: string; x: number; y: number }[];
-  nodes: { x: number; y: number; kind: string }[]; // resource nodes: rock, tree, herb, fish (dark or not stays hidden)
+  nodes: { x: number; y: number; kind: string }[]; // resource nodes: rock, tree, herb, fish, camp, cave (dark or not stays hidden)
+  npcs: { id: number; x: number; y: number; name: string; role: string; sex: string | null; look: string | null }[]; // people standing here (rooms); look: their actor sheet
 };
 
 export type JoinOptions = { name: string; ref: string };

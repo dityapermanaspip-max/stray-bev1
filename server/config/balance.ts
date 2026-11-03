@@ -2,6 +2,7 @@ import type pg from 'pg';
 import { formationConfig, type FormationConfig } from '../battle/formation.ts';
 import { creatureGenConfig, type CreatureGenConfig } from './creature_config.ts';
 import { foodConfig, gatherConfig, type FoodConfig, type GatherConfig } from './gather_config.ts';
+import { interiorConfig, type InteriorConfig } from './interior_config.ts';
 import { growthConfig, type GrowthConfig } from './growth_config.ts';
 import { standingConfig, type StandingConfig } from './standing_config.ts';
 import { worldGenConfig, type WorldGenConfig } from './worldgen_config.ts';
@@ -118,6 +119,7 @@ export type BalanceConfig = {
   standing: StandingConfig; // hidden favor, fame and haggling rules
   worldGen: WorldGenConfig; // how a new round's map is made
   gather: GatherConfig; // resource nodes (hidden numbers)
+  interior: InteriorConfig; // town service rooms and wild camps and caves
   food: FoodConfig;
   creatureGen: CreatureGenConfig; // how regular creatures are rolled per ring (hidden)
   formation: FormationConfig; // battle slots per side
@@ -259,6 +261,7 @@ export function buildBalance(raw: Map<string, unknown>): BalanceConfig {
     standing: standingConfig(need('standing')),
     worldGen: worldGenConfig(need('world.gen')),
     gather: gatherConfig(need('gather')),
+    interior: interiorConfig(need('interior')),
     food: foodConfig(need('food')),
     creatureGen: creatureGenConfig(need('creature.gen')),
     formation: formationConfig(need('battle.formation')),

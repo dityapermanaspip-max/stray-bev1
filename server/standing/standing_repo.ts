@@ -1,7 +1,11 @@
 import type pg from 'pg';
 import type { BalanceConfig } from '../config/balance.ts';
-import type { StandingConfig } from '../config/standing_config.ts';
+import type { LadderConfig, StandingConfig } from '../config/standing_config.ts';
+import { loadNamePools } from '../names/name_repo.ts';
+import { rollName, rollSex } from '../names/name_gen.ts';
+import type { Rng } from '../util/rng.ts';
 import { worldHourMs } from '../world/clock.ts';
+import { pairCap } from './ladder.ts';
 import { fameShares, type Standing } from './standing.ts';
 
 // Standing in the DB: door keepers (world.town_keepers), town visits, town fame, favor (social.favor) and
@@ -9,28 +13,43 @@ import { fameShares, type Standing } from './standing.ts';
 
 type Db = pg.Pool | pg.PoolClient;
 
-// The NPC behind a town door, made on first need. Two players asking at once both get the same keeper.
-export async function keeperFor(pool: pg.Pool, townRef: string, service: string): Promise<string> {
-  const find = () => pool.query<{ id: string }>('SELECT entity_id::text AS id FROM world.town_keepers WHERE town_ref = $1 AND service = $2', [townRef, service]);
-  const found = (await find()).rows[0];
-  if (found) return found.id;
-  await pool.query(
-    `WITH e AS (
-       INSERT INTO entity.entities (kind, name, round_id, location_ref)
-       SELECT 'native', $2, h.round_id, $1 FROM world.hexes h WHERE h.id::text = $1 RETURNING id
-     )
-     INSERT INTO world.town_keepers (town_ref, service, entity_id) SELECT $1, $2, id FROM e ON CONFLICT DO NOTHING`,
-    [townRef, service],
-  );
-  const made = (await find()).rows[0];
-  if (!made) throw new Error(`no town hex ${townRef}`);
-  // A losing racer's entity has no keeper row; remove it.
-  await pool.query(
-    `DELETE FROM entity.entities e WHERE e.kind = 'native' AND e.name = $2 AND e.location_ref = $1
-       AND NOT EXISTS (SELECT 1 FROM world.town_keepers k WHERE k.entity_id = e.id)`,
-    [townRef, service],
-  );
-  return made.id;
+// The NPC behind a town door, made on first need, of the town's folk with a name from the generator. Two players
+// asking at once both get the same keeper (one advisory lock per door).
+export async function keeperFor(pool: pg.Pool, townRef: string, service: string, rng: Rng): Promise<string> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`keeper:${townRef}:${service}`]);
+    const found = await client.query<{ id: string }>('SELECT entity_id::text AS id FROM world.town_keepers WHERE town_ref = $1 AND service = $2', [townRef, service]);
+    if (found.rows[0]) {
+      await client.query('COMMIT');
+      return found.rows[0].id;
+    }
+    // A town field is world.towns.id (the town's culture sets the folk); the old one-town dev round is a plain hex.
+    const town = await client.query<{ round: string; race: string | null }>(
+      `SELECT t.round_id::text AS round, r.race_name AS race FROM world.towns t
+       LEFT JOIN world.cultures c ON c.culture_name = t.culture LEFT JOIN entity.races r ON r.id = c.race_id
+       WHERE t.id::text = $1 OR t.hex_id::text = $1
+       UNION ALL SELECT h.round_id::text, NULL FROM world.hexes h WHERE h.id::text = $1 LIMIT 1`, [townRef],
+    );
+    if (!town.rows[0]) throw new Error(`no town ${townRef}`);
+    const race = town.rows[0].race ?? 'human';
+    const sex = rollSex(rng);
+    const name = rollName(await loadNamePools(client), race, sex, false, rng) ?? service;
+    const made = await client.query<{ id: string }>(
+      `INSERT INTO entity.entities (kind, name, round_id, location_ref, race_id, body_type)
+       VALUES ('native', $2, $5, $1, (SELECT id FROM entity.races WHERE race_name = $3), $4) RETURNING id::text AS id`,
+      [townRef, name, race, sex, town.rows[0].round],
+    );
+    await client.query('INSERT INTO world.town_keepers (town_ref, service, entity_id) VALUES ($1, $2, $3)', [townRef, service, made.rows[0].id]);
+    await client.query('COMMIT');
+    return made.rows[0].id;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // Entering a town starts a new visit, unless the player never left it (a reload or reconnect is the same visit).
@@ -47,21 +66,24 @@ export async function leaveVisit(pool: pg.Pool, entityId: string, townRef: strin
   await pool.query('UPDATE world.town_visits SET left_at = now() WHERE entity_id = $1 AND town_ref = $2 AND left_at IS NULL', [entityId, townRef]);
 }
 
-// A player's standing with one keeper in one town, for this visit. No open visit means no haggle.
-export async function loadStanding(pool: pg.Pool, entityId: string, keeperId: string, townRef: string, charm: number): Promise<Standing> {
-  const res = await pool.query<{ favor: string | null; fame: string | null; pushover: boolean | null; same_visit: boolean | null; won: boolean | null; visit: boolean }>(
+// A player's standing with one keeper in one town, for this visit. No open visit means no haggle. `base` is the
+// keeper's own base threshold (ladder_repo.npcBase).
+export async function loadStanding(pool: pg.Pool, l: LadderConfig, entityId: string, keeperId: string, townRef: string, charm: number, base: number): Promise<Standing> {
+  const res = await pool.query<{ favor: string | null; fame: string | null; pushover: boolean | null; same_visit: boolean | null; won: boolean | null; visit: boolean; pb: string | null; kb: string | null }>(
     `SELECT f.favor, tf.fame, ts.pushover_until > now() AS pushover, ts.haggle_visit = v.started_at AS same_visit,
-            ts.haggle_won AS won, v.started_at IS NOT NULL AS visit
+            ts.haggle_won AS won, v.started_at IS NOT NULL AS visit, pe.body_type AS pb, ke.body_type AS kb
      FROM (SELECT 1) one
      LEFT JOIN social.favor f ON f.entity_id = $1 AND f.target_id = $2
      LEFT JOIN world.town_fame tf ON tf.entity_id = $1 AND tf.town_ref = $3
      LEFT JOIN social.trade_standing ts ON ts.entity_id = $1 AND ts.target_id = $2
-     LEFT JOIN world.town_visits v ON v.entity_id = $1 AND v.town_ref = $3 AND v.left_at IS NULL`,
+     LEFT JOIN world.town_visits v ON v.entity_id = $1 AND v.town_ref = $3 AND v.left_at IS NULL
+     LEFT JOIN entity.entities pe ON pe.id = $1
+     LEFT JOIN entity.entities ke ON ke.id = $2`,
     [entityId, keeperId, townRef],
   );
   const r = res.rows[0]!;
   const haggle = !r.visit ? 'spent' : r.same_visit ? (r.won ? 'won' : 'spent') : 'open';
-  return { favor: Number(r.favor ?? 0), fame: Number(r.fame ?? 0), charm, pushover: r.pushover === true, haggle };
+  return { favor: Number(r.favor ?? 0), base, capTier: pairCap(l, r.pb, r.kb), fame: Number(r.fame ?? 0), charm, pushover: r.pushover === true, haggle };
 }
 
 export async function addFavor(db: Db, entityId: string, targetId: string, delta: number): Promise<void> {

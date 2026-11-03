@@ -28,7 +28,7 @@ function fight(): Fight {
   const instance = new BattleInstance(battleData(), { entities: [player, ...foes], progress: new Map([['me', progress]]), summonerSides: new Set(), seed: 1 });
   return {
     order: { entityId: 'me', name: 'walker1', fieldRef: 'f', x: 0, y: 0, seed: 1, foes: [{ species: 'cat', corrupted: true }, { species: 'cat', corrupted: false }] },
-    instance, player, foes, vices: new Map(),
+    instance, player, foes, vices: new Map(), ground: { biome: 'meadow', terrain: 'grass' },
     state: { id: 'me', kind: 'player', name: 'walker1', bodyParts: [], progress, loadout: new Map([[1, 'punch']]), body: null, unseen: new Set(), slot: 1, traits: [], raceResist: new Map() },
     inventory: { pieces: [], stacks: [] } as unknown as Fight['inventory'],
   };

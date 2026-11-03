@@ -1,5 +1,6 @@
 import type { StandingConfig } from '../config/standing_config.ts';
 import { hexDistance } from '../world/world_hour.ts';
+import { tierOf } from './ladder.ts';
 
 // Standing rules (hidden). Favor is personal (one NPC), fame is per town, and charm counts toward both at a gate.
 // Nothing here reaches the client: the door view only learns which options are open and which line to say.
@@ -7,20 +8,22 @@ import { hexDistance } from '../world/world_hour.ts';
 // What the server knows about a player and one NPC at one town, for this visit.
 export type Standing = {
   favor: number;
+  base: number; // this NPC's own base threshold (the ladder's T)
+  capTier: number; // the highest tier this pair can reach (a same-body-type pair stops short of the top)
   fame: number; // the player's fame in this town
   charm: number;
   pushover: boolean; // marked as a pushover by this NPC (until it fades)
   haggle: 'open' | 'won' | 'spent'; // this visit: not tried yet, won, or tried and lost
 };
 
-// 0 stranger, 1 known, 2 friend, 3 trusted (as many tiers as the config lists).
-export const favorTier = (cfg: StandingConfig, favor: number) => cfg.favorTiers.filter((t) => favor >= t).length;
+// Tier 0 is a stranger; the top tier is the ladder's last.
+export const favorTier = (cfg: StandingConfig, s: Standing, favor = s.favor) => tierOf(cfg.ladder, s.base, favor, s.capTier);
 
 // A talk option is open when favor and fame (each helped by charm) reach its gate. Unknown options stay closed.
 export function optionOpen(cfg: StandingConfig, option: string, s: Standing): boolean {
   const gate = cfg.options[option];
   if (!gate) return false;
-  return favorTier(cfg, s.favor + s.charm * cfg.charmFavor) >= gate.favorTier && s.fame + s.charm * cfg.charmFame >= gate.fame;
+  return favorTier(cfg, s, s.favor + s.charm * cfg.charmFavor) >= gate.favorTier && s.fame + s.charm * cfg.charmFame >= gate.fame;
 }
 
 // The haggle button shows when the option is open and this visit's try is not used yet.
@@ -59,8 +62,8 @@ export const generousSell = (cfg: StandingConfig, price: number) => down(price *
 
 // Generosity earns favor only while favor (charm does not count) is under the cap tier; past it, the NPC
 // takes the player for a pushover.
-export const generousOutcome = (cfg: StandingConfig, favor: number): 'favor' | 'pushover' =>
-  favorTier(cfg, favor) < cfg.generous.capTier ? 'favor' : 'pushover';
+export const generousOutcome = (cfg: StandingConfig, s: Standing): 'favor' | 'pushover' =>
+  favorTier(cfg, s) < cfg.generous.capTier ? 'favor' : 'pushover';
 
 // Fame from one deed at `from`: full in a town on that hex, falling off per hex, none past the radius.
 export type TownHex = { ref: string; q: number; r: number };

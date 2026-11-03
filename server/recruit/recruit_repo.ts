@@ -8,6 +8,9 @@ import { hasTraitFlag, type TraitOption } from '../growth/traits.ts';
 import type { UnlockRule } from '../growth/unlocks.ts';
 import { addItem, emptyInventory, stackKey } from '../inventory/bag.ts';
 import { equipGear } from '../inventory/gear.ts';
+import { familyOf, rollName, rollSex, type NamePools } from '../names/name_gen.ts';
+import { loadNamePools } from '../names/name_repo.ts';
+import { npcBase, summonerStartFavor } from '../standing/ladder_repo.ts';
 import type { ItemCatalog } from '../inventory/items.ts';
 import { STATS, type CoreStats } from '../stats/derived.ts';
 import type { Rng } from '../util/rng.ts';
@@ -21,35 +24,24 @@ import { planRoster, type TownForRoster } from './roster.ts';
 export type RecruitDeps = {
   pool: pg.Pool; cfg: BalanceConfig; catalog: ItemCatalog; unlocks: readonly UnlockRule[]; roundId: string;
   rc: RecruitConfig; templates: Map<string, RecruitTemplate>; traitOptions: TraitOption[];
-  names: Map<string, string[]>; // race -> given names (npc_name.<race>); '' = anyone's (npc_name)
+  names: NamePools; // the name generator's pools by race (entity.name_parts)
   races: Map<string, RaceMods>;
 };
-
-export const NPC_NAME_KEY = 'npc_name';
 
 export async function loadRecruitData(pool: pg.Pool): Promise<Pick<RecruitDeps, 'rc' | 'templates' | 'traitOptions' | 'names' | 'races'>> {
   const [config, templates, traitOptions, names, races] = await Promise.all([
     pool.query<{ value: Record<string, unknown> }>("SELECT value FROM config.balance_config WHERE config_key = 'recruit'"),
     pool.query<{ template_name: string; data: Record<string, unknown> }>('SELECT template_name, data FROM entity.recruit_templates'),
     loadTraitOptions(pool),
-    pool.query<{ key: string; text: string }>(
-      `SELECT condition_key AS key, text FROM presentation.diegetic_lines
-       WHERE condition_key = $1 OR condition_key LIKE $1 || '.%' ORDER BY text`,
-      [NPC_NAME_KEY],
-    ),
+    loadNamePools(pool),
     pool.query<{ race_name: string; stat_mods: Partial<CoreStats> }>('SELECT race_name, stat_mods FROM entity.races'),
   ]);
   if (!config.rows[0]) throw new Error('balance_config recruit is missing');
-  const byRace = new Map<string, string[]>();
-  for (const n of names.rows) {
-    const race = n.key === NPC_NAME_KEY ? '' : n.key.slice(NPC_NAME_KEY.length + 1);
-    byRace.set(race, [...(byRace.get(race) ?? []), n.text]);
-  }
   return {
     rc: recruitConfig(config.rows[0].value),
     templates: new Map(templates.rows.map((r) => [r.template_name, parseTemplate(r.template_name, r.data)])),
     traitOptions,
-    names: byRace,
+    names,
     races: new Map(races.rows.map((r) => [r.race_name, { name: r.race_name, statMods: r.stat_mods ?? {} }])),
   };
 }
@@ -83,14 +75,17 @@ export async function loadRosterTowns(pool: pg.Pool, roundId: string): Promise<T
   });
 }
 
-// The keeper behind a door or a notable role, made if missing (same rows the shop's keeper uses), of the town's folk.
-async function ensureKeeper(client: pg.PoolClient, roundId: string, townRef: string, service: string, race: string): Promise<string> {
+// The keeper behind a door or a notable role, made if missing (same rows the shop's keeper uses), of the town's folk,
+// with a generated name. A notable's name has a middle name (its heirs keep it).
+async function ensureKeeper(client: pg.PoolClient, d: RecruitDeps, townRef: string, service: string, race: string, rng: Rng): Promise<string> {
   const found = await client.query<{ id: string }>('SELECT entity_id AS id FROM world.town_keepers WHERE town_ref = $1 AND service = $2', [townRef, service]);
   if (found.rows[0]) return found.rows[0].id;
+  const sex = rollSex(rng);
+  const notable = d.rc.notables.some((n) => n.role === service);
   const made = await client.query<{ id: string }>(
-    `INSERT INTO entity.entities (kind, name, round_id, location_ref, race_id)
-     VALUES ('native', $3, $1, $2, (SELECT id FROM entity.races WHERE race_name = $4)) RETURNING id`,
-    [roundId, townRef, service, race],
+    `INSERT INTO entity.entities (kind, name, round_id, location_ref, race_id, body_type)
+     VALUES ('native', $3, $1, $2, (SELECT id FROM entity.races WHERE race_name = $4), $5) RETURNING id`,
+    [d.roundId, townRef, rollName(d.names, race, sex, notable, rng) ?? service, race, sex],
   );
   await client.query('INSERT INTO world.town_keepers (town_ref, service, entity_id) VALUES ($1, $2, $3)', [townRef, service, made.rows[0].id]);
   return made.rows[0].id;
@@ -102,15 +97,18 @@ type Placement = { townRef: string; source: 'pool' | 'lineage' | 'summoner'; spo
 // gear in hand, and its place in the town.
 async function writeRecruit(client: pg.PoolClient, d: RecruitDeps, t: RecruitTemplate, r: RolledRecruit, at: Placement, rng: Rng): Promise<string> {
   const kind = at.source === 'summoner' ? 'summoner' : 'recruit';
-  const names = d.names.get(r.race) ?? d.names.get('') ?? [];
-  const name = names.length > 0 ? names[Math.floor(rng() * names.length)] : t.name;
+  // An heir keeps the parent's family (a notable's middle and last name); anyone else starts a family of their own.
+  const parentName = at.parentId ? (await client.query<{ name: string }>('SELECT name FROM entity.entities WHERE id = $1', [at.parentId])).rows[0]?.name : null;
+  const sex = rollSex(rng);
+  const name = rollName(d.names, r.race, sex, false, rng, parentName ? familyOf(parentName) : null) ?? t.name;
   const res = await client.query<{ id: string }>(
-    `INSERT INTO entity.entities (kind, name, race_id, round_id, location_ref, is_summoner)
-     SELECT $1, $2, r.id, $3, $4, $5 FROM entity.races r WHERE r.race_name = $6 RETURNING id`,
-    [kind, name, d.roundId, at.townRef, kind === 'summoner', r.race],
+    `INSERT INTO entity.entities (kind, name, race_id, round_id, location_ref, is_summoner, body_type)
+     SELECT $1, $2, r.id, $3, $4, $5, $7 FROM entity.races r WHERE r.race_name = $6 RETURNING id`,
+    [kind, name, d.roundId, at.townRef, kind === 'summoner', r.race, sex],
   );
   if (!res.rows[0]) throw new Error(`template ${t.name}: unknown race ${r.race}`);
   const id = res.rows[0].id;
+  await npcBase(client, d.cfg.standing.ladder, id, at.source === 'summoner' ? 'summoner' : t.mercenary ? 'mercenary' : 'recruit', rng);
   const progress: Progress = {
     stats: Object.fromEntries(STATS.map((s) => [s, { base: r.stats[s], exp: 0 }])) as Progress['stats'],
     moves: new Map([...r.moves, ...r.life].map((m) => [m.name, { level: m.level, exp: 0 }])),
@@ -155,9 +153,9 @@ export async function fillTown(d: RecruitDeps, town: TownForRoster, rng: Rng): P
   const plan = planRoster(d.rc, d.cfg.rings.count, town, [...d.templates.values()],
     { pool: Number(now.rows[0].pool), offering: new Set(now.rows[0].offering ?? []) }, rng);
   return inTransaction(d.pool, async (client) => {
-    for (const role of plan.notables) await ensureKeeper(client, d.roundId, town.ref, role, town.race);
+    for (const role of plan.notables) await ensureKeeper(client, d, town.ref, role, town.race, rng);
     for (const { parent, template, race } of plan.lineage) {
-      const parentId = await ensureKeeper(client, d.roundId, town.ref, parent, town.race);
+      const parentId = await ensureKeeper(client, d, town.ref, parent, town.race, rng);
       const rolled = rollRecruit(d.cfg, d.rc, template, town.ring, rng, d.unlocks, d.traitOptions, raceOf(d, race));
       await writeRecruit(client, d, template, rolled, { townRef: town.ref, source: 'lineage', spot: parent, parentId, boundTo: null }, rng);
     }
@@ -185,10 +183,13 @@ export async function rollSummoner(d: RecruitDeps, playerId: string, rng: Rng): 
   if (roles.length === 0) return null;
   const role = roles[Math.floor(rng() * roles.length)];
   return inTransaction(d.pool, async (client) => {
-    const parentId = await ensureKeeper(client, d.roundId, town.ref, role, town.race);
+    const parentId = await ensureKeeper(client, d, town.ref, role, town.race, rng);
     const rolled = rollRecruit(d.cfg, d.rc, template, town.ring, rng, d.unlocks, d.traitOptions, raceOf(d, town.race));
     const id = await writeRecruit(client, d, template, rolled, { townRef: town.ref, source: 'summoner', spot: role, parentId, boundTo: playerId }, rng);
     await client.query('UPDATE entity.entities SET summoner_id = $2 WHERE id = $1', [playerId, id]);
+    // Recruitable from the start: the player begins at the start tier with their own summoner (they may leave them).
+    const l = d.cfg.standing.ladder;
+    await summonerStartFavor(client, l, playerId, id, await npcBase(client, l, id, 'summoner', rng));
     return id;
   });
 }

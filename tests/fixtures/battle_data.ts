@@ -78,6 +78,7 @@ export const RAW_CONFIG = new Map<string, unknown>([
       specialties: { meadow: ['chicken', 'lizard'] }, jobs: { farmer: 0.5, hunter: 0.5 } },
     vice_rings: [1, 2],
   }],
+  ['interior', { rooms: {}, wild: {camp: { rest_price: 0, ambush_permille: 100 }} }],
   ['gather', {
     chance_base: 0.8, chance_per_level: 0.02, guard_permille: 500,
     kinds: {
@@ -92,7 +93,13 @@ export const RAW_CONFIG = new Map<string, unknown>([
     die: { 4: 10, 3: 25, 2: 25, 1: 25 }, max_move_level: 25, corrupted_stat_mult: 1.2, corrupted_budget_per_step: 10,
   }],
   ['standing', {
-    favor_tiers: [10, 30, 60], charm_favor: 1, charm_fame: 1,
+    ladder: {
+      tiers: 10, step_mult: 1.35, talk_cap: 2, talk_tick_hours: 1, fame_div: 10, fame_floor: 0.1, gift: { min_tier: 2, per_days: 1, favor: 10 },
+      same_sex_max_tier: 9, summoner_start_tier: 3, greet_tiers: 4, refuse_fame: -5,
+      roles: { default: { base: 30, spread: 0.25 }, mercenary: { base: 20, spread: 0.25 } },
+      unlocks: { hire: 1, gift: 2, party: 3, loadout: 4, butcher_child: 4, command: 5 }, salary_favor: 5, hire_days: 1,
+    },
+    charm_favor: 1, charm_fame: 1,
     options: { haggle: { favor_tier: 1, fame: 0 } },
     haggle: { base_permille: 300, charm_permille: 20, min_permille: 50, max_permille: 900, margin: 0.1, fail_favor: 3 },
     generous: { margin: 0.2, favor: 2, cap_tier: 2 },

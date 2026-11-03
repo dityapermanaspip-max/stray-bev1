@@ -35,9 +35,10 @@ export type StatusPanel = {
   moves: { move: string; name: string; mastery: number; slot: number | null; isNew: boolean }[];
   bag: {
     load: Word;
-    slots: { slot: string; item: string | null }[];
-    items: { ref: string; item: string; name: string; qty: number; slot: string | null; wearable: boolean; edible: boolean; condition: number | null; freshness: Word | null }[];
+    slots: { slot: string; label: string | null; accepts: string; item: string | null }[]; // label: the slot's name; accepts: what fits it
+    items: { ref: string; item: string; name: string; qty: number; slot: string | null; wearable: boolean; fits: string | null; edible: boolean; droppable: boolean; condition: number | null; freshness: Word | null }[];
   } | null;
+  who: string | null; // a companion's name when this is their window (read only), else null
   formation: { slot: number; front: number; back: number }; // own battle slot: 1..front is the front row, then the back row
   canSwap: boolean; // inside a town's safe square (or the testing flag)
   line: string | null; // a refusal or a remark after the last change
@@ -48,3 +49,8 @@ export type LoadoutRequest = { slot: number; move: string | null };
 export type GearRequest = { wear: string; slot?: string } | { remove: string }; // wear: a bag ref; remove: a gear slot
 export type FormationRequest = { slot: number }; // a battle slot; town only, like loadout changes
 export type EatRequest = { ref: string }; // a bag ref; answered with StatusPanel (its line says how it went)
+export type DropRequest = { ref: string; qty: number }; // throw away qty of a bag ref (not worn, never a key); answered with StatusPanel
+
+// room.request('party'): the companions with you. open: your bond is deep enough to look at their window.
+export type PartyView = { members: { id: string; name: string; bond: string | null; open: boolean }[] };
+export type CompanionRequest = { id: string }; // answered with their StatusPanel (read only), or null when the bond is too thin

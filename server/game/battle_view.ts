@@ -57,6 +57,7 @@ export function battleView(w: Words, f: Fight, slots: number, formation: { front
     moves,
     moveNames: Object.fromEntries([...all, ...equippedMoves(f.state.loadout)].map((m) => [m, named(w, MOVE_NAME + m, m)])),
     ready: isReady(f),
+    ground: f.ground,
   };
 }
 

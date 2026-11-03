@@ -1,3 +1,4 @@
+import { baseRef } from '../interior/interior_ref.ts';
 import { applyTraits } from '../growth/traits.ts';
 import { matchMaker } from '@colyseus/core';
 import { growerEntity } from '../battle/from_state.ts';
@@ -6,6 +7,7 @@ import { BattleInstance } from '../battle/instance.ts';
 import type { BattleEntity } from '../battle/types.ts';
 import { loadEntityState, type EntityState } from '../data/entity_load.ts';
 import { fieldRing } from '../data/field_repo.ts';
+import { tileAt } from '../field/types.ts';
 import { loadInventory } from '../data/item_repo.ts';
 import { mealActive, mealCosts } from '../food/food.ts';
 import { loadMeal } from '../food/food_service.ts';
@@ -16,7 +18,7 @@ import type { Foe } from '../world/encounter.ts';
 import { BATTLE_ROOM } from '../../shared/battle.ts';
 import { startFighting, stopFighting } from '../util/entity_lock.ts';
 import { createRng } from '../util/rng.ts';
-import type { GameWorld } from './world.ts';
+import { gridFor, type GameWorld } from './world.ts';
 import { weakenedProgress } from '../boss/boss_rules.ts';
 
 // Builds one field battle from the database: the player as saved (body, gear, loadout) against the creatures met.
@@ -32,13 +34,14 @@ export type Fight = {
   state: EntityState;
   inventory: Inventory;
   vices: Map<string, EntityState>; // battle entity id (= entity id) -> a vice's saved state, so it grows and is saved
+  ground: { biome: string; terrain: string }; // the field tile the fight started on: the board is made of it
 };
 
 export async function setUpFight(world: GameWorld, order: BattleOrder): Promise<Fight> {
   const { cfg } = world.data;
   const [state, inventory, meal, ring] = await Promise.all([
     loadEntityState(world.pool, order.entityId), loadInventory(world.pool, order.entityId), loadMeal(world.pool, order.entityId),
-    fieldRing(world.pool, order.fieldRef),
+    fieldRing(world.pool, baseRef(order.fieldRef)), // a room's creatures are its field's
   ]);
   const player = growerEntity(cfg, {
     id: order.entityId, kind: 'player', side: 'party', slot: state.slot, speaker: 'self', controller: 'player',
@@ -78,7 +81,10 @@ export async function setUpFight(world: GameWorld, order: BattleOrder): Promise<
     summonerSides: new Set(),
     seed: order.seed,
   });
-  return { order, instance, player, foes, state, inventory, vices };
+  const field = await gridFor(world, order.fieldRef);
+  const tile = field ? tileAt(field.grid, order.x, order.y) : undefined;
+  const ground = { biome: tile?.biome ?? 'meadow', terrain: tile?.terrain ?? 'grass' };
+  return { order, instance, player, foes, state, inventory, vices, ground };
 }
 
 // Snapshot shape for battle.battles.state (server only).

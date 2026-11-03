@@ -7,11 +7,13 @@ import {
 import { shopAdjust } from '../../server/standing/shop_standing.ts';
 import { cfg } from '../fixtures/battle_data.ts';
 
-const S = cfg.standing; // tiers 10 / 30 / 60; haggle needs tier 1; charm counts 1 favor per point
-const who = (over: Partial<Standing> = {}): Standing => ({ favor: 0, fame: 0, charm: 0, pushover: false, haggle: 'open', ...over });
+const S = cfg.standing; // base threshold 10 here: tiers at 10, 24, 43, 69...; haggle needs tier 1; charm counts 1 favor per point
+const who = (over: Partial<Standing> = {}): Standing => ({ favor: 0, base: 10, capTier: 10, fame: 0, charm: 0, pushover: false, haggle: 'open', ...over });
 
-test('favor tiers: stranger, known, friend, trusted', () => {
-  assert.deepEqual([-5, 0, 9, 10, 29, 30, 60, 500].map((f) => favorTier(S, f)), [0, 0, 0, 1, 1, 2, 3, 3]);
+test('favor tiers follow each NPC own thresholds, held down by the pair cap', () => {
+  assert.deepEqual([-5, 0, 9, 10, 23, 24, 43, 5000].map((f) => favorTier(S, who(), f)), [0, 0, 0, 1, 1, 2, 3, 10]);
+  assert.equal(favorTier(S, who({ capTier: 9 }), 5000), 9);
+  assert.equal(favorTier(S, who({ base: 20 }), 46), 1); // a harder NPC: tier 2 needs 47
 });
 
 test('charm lowers the gate: a charming stranger may haggle, a plain one may not', () => {
@@ -53,10 +55,10 @@ test('generous: pay 20% over or take 20% under, on top of the price shown', () =
   assert.equal(adj.sell(70), 61); // 77 shown, 20% under
 });
 
-test('generosity earns favor below friend; from friend on it makes a pushover', () => {
-  assert.equal(generousOutcome(S, 0), 'favor');
-  assert.equal(generousOutcome(S, 29), 'favor');
-  assert.equal(generousOutcome(S, 30), 'pushover');
+test('generosity earns favor below tier 2; from tier 2 on it makes a pushover', () => {
+  assert.equal(generousOutcome(S, who()), 'favor');
+  assert.equal(generousOutcome(S, who({ favor: 23 })), 'favor');
+  assert.equal(generousOutcome(S, who({ favor: 24 })), 'pushover');
 });
 
 test('fame: full in the deed town, halved per hex, none past two hexes', () => {

@@ -14,7 +14,8 @@ export const ASK_LINE_KEYS = { door: 'ask.door', exit: 'ask.exit' } as const;
 
 export function askView(world: GameWorld, rng: Rng, pending: Pending): AskView {
   const lines = world.data.lines;
-  const key = pending.kind === 'node' ? (pending.dark ? 'ask.node_dark' : 'ask.node') : ASK_LINE_KEYS[pending.kind];
+  const wild = pending.kind === 'node' && !!world.data.cfg.interior.wild[pending.nodeKind]; // a camp or cave to rest in
+  const key = wild ? 'ask.wild' : pending.kind === 'node' ? (pending.dark ? 'ask.node_dark' : 'ask.node') : ASK_LINE_KEYS[pending.kind];
   const text = lines.pick(rng, key, 0, 'self')?.text ?? null;
   const place = pending.kind === 'door' ? lines.pick(rng, SERVICE_NAME_PREFIX + pending.service)?.text ?? pending.service
     : pending.kind === 'node' ? lines.pick(rng, NODE_NAME_PREFIX + pending.nodeKind)?.text ?? null : null;

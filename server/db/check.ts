@@ -1,4 +1,8 @@
 import path from 'node:path';
+import { interiorConfig } from '../config/interior_config.ts';
+import { findTileProblems } from '../tiles/tile_check.ts';
+import { loadTiles } from '../tiles/tile_repo.ts';
+import { findInteriorProblems } from '../interior/interior_check.ts';
 import { findFormationProblems, formationConfig } from '../battle/formation.ts';
 import { fileURLToPath } from 'node:url';
 import type pg from 'pg';
@@ -12,6 +16,7 @@ import { findFieldProblems } from '../field/parse.ts';
 import { EPIPHANY_PREFIX, UNLOCK_KINDS } from '../growth/unlocks.ts';
 import { findTraitProblems } from '../growth/traits.ts';
 import { loadTraitOptions } from '../data/entity_load.ts';
+import { loadNamePools } from '../names/name_repo.ts';
 import { loadRecruitData } from '../recruit/recruit_repo.ts';
 import { findTemplateProblems } from '../recruit/recruit_rules.ts';
 import { LOAD_TIERS } from '../inventory/bag.ts';
@@ -38,6 +43,7 @@ import {
   findUnlockProblems,
   knownGrowthTags,
   NAME_PREFIX,
+  findLadderProblems,
   type LineGroup,
   type MoveInfo,
 } from './startup_check.ts';
@@ -95,7 +101,7 @@ export async function runStartupCheck(pool: pg.Pool): Promise<string[]> {
     'SELECT species_name, main_stats, ring_min, ring_max FROM entity.species',
   );
   const rings = config.get('world.rings');
-  const standing = config.get('standing') as { favor_tiers?: number[] } | undefined;
+  const standing = config.get('standing') as { ladder?: { tiers?: number; greet_tiers?: number } } | undefined;
   const fieldRefs = await pool.query<{ what: string; template: string; biome: string | null }>(
     `SELECT format('hex %s,%s', q, r) AS what, field_template AS template, biome FROM world.hexes
      UNION ALL SELECT format('corridor %s', id), template, NULL FROM world.corridors`,
@@ -109,6 +115,8 @@ export async function runStartupCheck(pool: pg.Pool): Promise<string[]> {
       ? findArrivalProblems(answers.rows, lineKeys, arrival.answers_per_question)
       : ['balance_config arrival.answers_per_question is missing']),
     ...findLineProblems(groups.rows, minLines),
+    ...findInteriorProblems(config.get('interior'), lineKeys),
+    ...(config.has('interior') ? findTileProblems(await loadTiles(pool), interiorConfig(config.get('interior') as Parameters<typeof interiorConfig>[0]).rooms) : []),
     ...findBodyTierProblems(bodyTiers as Record<string, number[]>, groups.rows, GENERIC_SPEAKER),
     ...findNumberProblems(lines.rows),
     ...findMoveProblems(moves.rows, knownGrowthTags([...config.keys()]), nameKeys),
@@ -126,8 +134,12 @@ export async function runStartupCheck(pool: pg.Pool): Promise<string[]> {
       : ['balance_config world.gen is missing']),
     ...findTownLineProblems(
       [...fields.templates.values()].flatMap((t) => t.town?.buildings.map((b) => b.service) ?? []), lineKeys, tierKeys,
-      standing?.favor_tiers?.length ?? 0,
+      standing?.ladder?.greet_tiers ?? 0,
     ),
+    ...(typeof standing?.ladder?.tiers === 'number'
+      ? findLadderProblems(standing.ladder.tiers, lineKeys, (await pool.query<{ n: string }>('SELECT DISTINCT r.race_name AS n FROM world.cultures c JOIN entity.races r ON r.id = c.race_id')).rows.map((r) => r.n), // folk with towns
+        new Map([...(await loadNamePools(pool))].map(([race, p]) => [race, { male: p.male.length, female: p.female.length, last: p.last.length }])))
+      : ['balance_config standing.ladder is missing']),
     ...findCraftProblems(await loadRecipes(pool), new Set(catalog.keys()), lineKeys),
     ...findTraitProblems(await loadTraitOptions(pool), lineKeys, config.get('elements')),
     ...findTemplateProblems([...(await loadRecruitData(pool)).templates.values()],

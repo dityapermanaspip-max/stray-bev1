@@ -2,10 +2,13 @@ import type pg from 'pg';
 import type { StandingConfig } from '../config/standing_config.ts';
 import { loadEntityState } from '../data/entity_load.ts';
 import type { GameWorld } from '../game/world.ts';
+import { readClock } from '../data/tick_repo.ts';
 import { progressStats } from '../growth/level_up.ts';
 import type { PriceAdjust } from '../town/shop.ts';
 import { rollPermille } from '../util/luck.ts';
 import type { Rng } from '../util/rng.ts';
+import { shopRefuses, talkFavor } from './ladder.ts';
+import { npcBase, talkTo } from './ladder_repo.ts';
 import {
   canHaggle, favorTier, generousBuy, generousOutcome, generousSell, haggleChance, modBuy, modSell, priceMods, type Standing,
 } from './standing.ts';
@@ -16,14 +19,28 @@ import { addFavor, keeperFor, loadStanding, markPushover, recordHaggle } from '.
 
 export type ShopTalk = { keeperId: string; s: Standing };
 
-export async function shopTalk(world: GameWorld, entityId: string, townRef: string): Promise<ShopTalk> {
-  const [keeperId, state] = await Promise.all([keeperFor(world.pool, townRef, 'shop'), loadEntityState(world.pool, entityId)]);
+export async function shopTalk(world: GameWorld, entityId: string, townRef: string, rng: Rng): Promise<ShopTalk> {
+  const l = world.data.cfg.standing.ladder;
+  const keeperId = await keeperFor(world.pool, townRef, 'shop', rng);
+  const [state, base] = await Promise.all([loadEntityState(world.pool, entityId), npcBase(world.pool, l, keeperId, 'shop', rng)]);
   const charm = progressStats(state.progress).charm;
-  return { keeperId, s: await loadStanding(world.pool, entityId, keeperId, townRef, charm) };
+  return { keeperId, s: await loadStanding(world.pool, l, entityId, keeperId, townRef, charm, base) };
 }
 
-// Greeting tier: favor alone (charm opens doors, it does not make a stranger a friend).
-export const greetTier = (cfg: StandingConfig, t: ShopTalk) => favorTier(cfg, t.s.favor);
+// A town that has turned against the player (fame at or under the line) is not served; the door gives the refusal line.
+export const shopRefused = (cfg: StandingConfig, t: ShopTalk) => shopRefuses(cfg.ladder, t.s.fame);
+
+// Going to the shop, and each trade there, counts as a talk to the shopkeeper: favor from charm and fame, at most
+// talk_cap per tick (ladder.ts).
+export async function shopContact(world: GameWorld, entityId: string, t: ShopTalk): Promise<void> {
+  const l = world.data.cfg.standing.ladder;
+  const { hours } = await readClock(world.pool, world.roundId);
+  await talkTo(world.pool, l, entityId, t.keeperId, hours, talkFavor(l, t.s.charm, t.s.fame));
+}
+
+// Greeting tier: favor alone (charm opens doors, it does not make a stranger a friend). Tiers past the last written
+// greeting reuse it.
+export const greetTier = (cfg: StandingConfig, t: ShopTalk) => Math.min(favorTier(cfg, t.s), cfg.ladder.greetTiers);
 export const haggleOpen = (cfg: StandingConfig, t: ShopTalk) => canHaggle(cfg, t.s);
 
 // Prices for this player at this shop. Generous applies on top of the price they are shown.
@@ -47,7 +64,7 @@ export async function haggle(world: GameWorld, rng: Rng, entityId: string, townR
 // After a generous trade: favor while under the cap, otherwise the pushover mark. Runs inside the trade's transaction.
 export function generousEffect(world: GameWorld, entityId: string, t: ShopTalk): { line: string; write: (db: pg.PoolClient) => Promise<void> } {
   const { cfg } = world.data;
-  if (generousOutcome(cfg.standing, t.s.favor) === 'favor') {
+  if (generousOutcome(cfg.standing, t.s) === 'favor') {
     return { line: 'town.shop.generous', write: (db) => addFavor(db, entityId, t.keeperId, cfg.standing.generous.favor) };
   }
   return { line: 'town.shop.pushover', write: (db) => markPushover(db, cfg, entityId, t.keeperId) };

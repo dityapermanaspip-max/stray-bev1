@@ -2,7 +2,7 @@ import { Room, type Client } from '@colyseus/core';
 import { createBattleRow, snapshotBattle } from '../data/battle_repo.ts';
 import { withEntity } from '../util/entity_lock.ts';
 import { createRng } from '../util/rng.ts';
-import type { ActRequest, BattleLine, BattleView } from '../../shared/battle.ts';
+import type { ActRequest, AutoRequest, BattleLine, BattleView } from '../../shared/battle.ts';
 import { finishFight } from './battle_end.ts';
 import { fightState, releaseFight, setUpFight, type BattleOrder, type Fight } from './battle_setup.ts';
 import { battleView, eventsFor, isReady, type Words } from './battle_view.ts';
@@ -37,6 +37,7 @@ export class BattleRoom extends Room<{ client: BattleClient }> {
   messages = {
     view: (): BattleView => battleView(this.words, this.fight, BattleRoom.world.data.cfg.loadoutSlots, BattleRoom.world.data.cfg.formation),
     act: (client: BattleClient, msg: ActRequest) => this.act(client, msg),
+    auto: (client: BattleClient, msg: AutoRequest) => client.userData?.entityId === this.fight.player.id && this.control(msg?.on === true ? 'ai' : 'player'),
   };
 
   async onCreate(order: BattleOrder) {

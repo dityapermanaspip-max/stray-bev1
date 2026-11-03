@@ -10,19 +10,20 @@ export type NodeKind = {
   refillPerHour: number; // uses given back per world hour
   exp: number; // move exp per use
   near: string[]; // only next to one of these terrains (empty: anywhere)
+  on: string[]; // stands ON one of these (water-like) terrains, worked from the bank beside it (empty: on ground)
 };
 export type GatherConfig = { chanceBase: number; chancePerLevel: number; guardPermille: number; kinds: Record<string, NodeKind> };
 export type FoodConfig = { durationMinutes: number };
 
 type RawKind = {
-  move: string; tools: string[]; bonus_tools: string[]; bonus_mult: number; uses: number; refill_per_hour: number; exp: number; near: string[];
+  move: string; tools: string[]; bonus_tools: string[]; bonus_mult: number; uses: number; refill_per_hour: number; exp: number; near: string[]; on?: string[];
 };
 type Raw = { chance_base: number; chance_per_level: number; guard_permille: number; kinds: Record<string, RawKind> };
 
 export function gatherConfig(r: Raw): GatherConfig {
   const kinds = Object.fromEntries(Object.entries(r.kinds).map(([name, k]) => [name, {
     move: k.move, tools: k.tools, bonusTools: k.bonus_tools ?? [], bonusMult: k.bonus_mult ?? 1, uses: k.uses,
-    refillPerHour: k.refill_per_hour, exp: k.exp, near: k.near ?? [],
+    refillPerHour: k.refill_per_hour, exp: k.exp, near: k.near ?? [], on: k.on ?? [],
   }]));
   return { chanceBase: r.chance_base, chancePerLevel: r.chance_per_level, guardPermille: r.guard_permille, kinds };
 }

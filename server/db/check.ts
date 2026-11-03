@@ -13,6 +13,7 @@ import { loadRecipes } from '../data/economy_repo.ts';
 import { loadFieldData } from '../data/field_repo.ts';
 import { loadItemCatalog } from '../data/item_repo.ts';
 import { findFieldProblems } from '../field/parse.ts';
+import { findCorridorProblems } from '../worldgen/corridor_templates.ts';
 import { EPIPHANY_PREFIX, UNLOCK_KINDS } from '../growth/unlocks.ts';
 import { findTraitProblems } from '../growth/traits.ts';
 import { loadTraitOptions } from '../data/entity_load.ts';
@@ -21,6 +22,7 @@ import { loadRecruitData } from '../recruit/recruit_repo.ts';
 import { findTemplateProblems } from '../recruit/recruit_rules.ts';
 import { LOAD_TIERS } from '../inventory/bag.ts';
 import { LOOT_LINE_KEYS } from '../inventory/butcher.ts';
+import { blendConfig, findBlendProblems } from '../config/blend_config.ts';
 import { findGatherProblems, gatherConfig } from '../config/gather_config.ts';
 import { FOOD_LINE_KEYS } from '../food/food_service.ts';
 import { GATHER_LINE_KEYS } from '../gather/gather_service.ts';
@@ -128,6 +130,7 @@ export async function runStartupCheck(pool: pg.Pool): Promise<string[]> {
       ? findLootProblems([...catalog.values()], LOOT_LINE_KEYS, lineKeys, tierKeys, rot.hours.length + 1, coins, moveNames, butchery.move)
       : ['balance_config carcass_rot or butchery is missing']),
     ...findFieldProblems([...fields.templates.values()], [...fields.biomes.values()]),
+    ...findCorridorProblems([...fields.templates.values()]),
     ...[...fields.biomes.keys()].filter((b) => !lineKeys.has(BIOME_NAME_PREFIX + b)).map((b) => `biome ${b}: no ${BIOME_NAME_PREFIX} line`),
     ...(config.has('world.gen') && rings
       ? findWorldGenProblems(worldGenConfig(config.get('world.gen') as Parameters<typeof worldGenConfig>[0]), (rings as { count: number }).count, new Set(fields.biomes.keys()))
@@ -149,6 +152,9 @@ export async function runStartupCheck(pool: pg.Pool): Promise<string[]> {
     ...(await findViceDataProblems(pool, config.get('vice'), moveNames, lineKeys)),
     ...(await findBossProblems(pool, config, moveNames, lineKeys)),
     ...[...GATHER_LINE_KEYS, ...FOOD_LINE_KEYS].filter((k) => !lineKeys.has(k)).map((k) => `${k}: no lines`),
+    ...(config.has('biome_blend')
+      ? findBlendProblems(blendConfig(config.get('biome_blend') as Parameters<typeof blendConfig>[0]), new Set(fields.biomes.keys()))
+      : ['balance_config biome_blend is missing']),
     ...(config.has('gather') && config.has('food')
       ? [
         ...findGatherProblems(gatherConfig(config.get('gather') as Parameters<typeof gatherConfig>[0]), moveNames, new Set(await nodeTables(pool))),

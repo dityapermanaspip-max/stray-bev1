@@ -8,6 +8,7 @@ export const FIELD_ROOM = 'field';
 export type FieldTileView = { t: string; b: string; h: number; w: boolean; s: number; safe: boolean; door: string | null };
 export type FieldView = {
   ref: string;
+  rank: string[]; // biome order, gentlest first: the lower-ranked biome of a pair wears the connector tile
   kind: 'open' | 'corridor' | 'town' | 'interior';
   width: number;
   height: number;

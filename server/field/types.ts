@@ -3,7 +3,8 @@
 export type FieldKind = 'open' | 'corridor' | 'town' | 'interior'; // interior: a small room (server/interior)
 
 // Shape: size, kind, and how obstacle density scales here. Towns add a layout for their safe middle.
-export type FieldTemplate = { name: string; kind: FieldKind; width: number; height: number; obstacleMult: number; town: TownLayout | null };
+export type FieldTemplate = { name: string; kind: FieldKind; width: number; height: number; obstacleMult: number; town: TownLayout | null; travel: 'x' | 'y' | null };
+// travel (corridors): the way the long side runs; worldgen gives a border in hex direction 0 a x-template, 1 and 2 a y-template (see worldgen/corridor_templates.ts)
 
 // A town's middle: a safe square of `safe` tiles at one height, a road cross through the centre, and buildings
 // at random spots (server/field/town.ts). Each building is blocked except its door, which opens its service.
@@ -38,6 +39,7 @@ export type FieldSpec = {
   biomeB: Biome | null;
   blend: { from: number; to: number };
   seed: number;
+  dir?: number; // a corridor: the hex direction (0-5) of its border from hex A to hex B; its exits follow it (exits.ts)
   gate?: boolean; // a hex that holds a town: a small walled town in the middle with a gate into the town field
 };
 

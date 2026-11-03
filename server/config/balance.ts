@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import { formationConfig, type FormationConfig } from '../battle/formation.ts';
 import { creatureGenConfig, type CreatureGenConfig } from './creature_config.ts';
+import { blendConfig, type BlendConfig } from './blend_config.ts';
 import { foodConfig, gatherConfig, type FoodConfig, type GatherConfig } from './gather_config.ts';
 import { interiorConfig, type InteriorConfig } from './interior_config.ts';
 import { growthConfig, type GrowthConfig } from './growth_config.ts';
@@ -118,6 +119,7 @@ export type BalanceConfig = {
   statGrowth: GrowthConfig; // stat exp by move tier, hidden race move exp rules
   standing: StandingConfig; // hidden favor, fame and haggling rules
   worldGen: WorldGenConfig; // how a new round's map is made
+  blend: BlendConfig; // biome connector rank (public order, no numbers)
   gather: GatherConfig; // resource nodes (hidden numbers)
   interior: InteriorConfig; // town service rooms and wild camps and caves
   food: FoodConfig;
@@ -260,6 +262,7 @@ export function buildBalance(raw: Map<string, unknown>): BalanceConfig {
     statGrowth: growthConfig(need('growth.tiers'), need('growth.race_exp')),
     standing: standingConfig(need('standing')),
     worldGen: worldGenConfig(need('world.gen')),
+    blend: blendConfig(need('biome_blend')),
     gather: gatherConfig(need('gather')),
     interior: interiorConfig(need('interior')),
     food: foodConfig(need('food')),

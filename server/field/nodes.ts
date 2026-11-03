@@ -12,16 +12,20 @@ import { tileAt, type FieldGrid, type FieldSpec, type Point, type ResourceNode }
 // A node is an obstacle (decided 2026-11-02): its tile turns unwalkable and it is worked from a tile beside it
 // (beside = a 4-neighbour within a climbing step). A spot is only taken when blocking it keeps every other walkable
 // tile reachable from the spawn and leaves a reachable tile beside it. placeNodes changes the grid that way.
+// A kind with `on` terrains (fishing: water) stands on one of them (a tile that is not walkable already) and is worked
+// from the bank: a reachable walkable tile beside it within a climbing step. Those kinds are placed last, so land nodes
+// cannot close a bank afterwards.
 // `kinds`: only these kinds are placed (default: all of the biome's).
 
 const NODE_LAYER = 7;
 const AROUND = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
-export function placeNodes(grid: FieldGrid, spec: FieldSpec, near: Record<string, string[]>, kinds?: (kind: string) => boolean): ResourceNode[] {
+export function placeNodes(grid: FieldGrid, spec: FieldSpec, near: Record<string, string[]>, kinds?: (kind: string) => boolean, on: Record<string, string[]> = {}): ResourceNode[] {
   const rng = createRng(layerSeed(spec.seed, NODE_LAYER));
   const b = spec.biomeB ?? spec.biomeA;
   const mid = (spec.blend.from + spec.blend.to) / 2;
   const all = [...new Set([...Object.keys(spec.biomeA.nodes), ...Object.keys(b.nodes)])].sort().filter((k) => !kinds || kinds(k));
+  all.sort((a, b) => Number((on[a]?.length ?? 0) > 0) - Number((on[b]?.length ?? 0) > 0)); // stable: water kinds go last
   const blocked = new Set<string>();
   for (const p of [grid.spawn, ...grid.exits]) for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) blocked.add(`${p.x + dx},${p.y + dy}`);
   const nodes: ResourceNode[] = [];
@@ -29,10 +33,16 @@ export function placeNodes(grid: FieldGrid, spec: FieldSpec, near: Record<string
   for (const kind of all) {
     const count = Math.round((spec.biomeA.nodes[kind] ?? 0) * (1 - mid) + (b.nodes[kind] ?? 0) * mid);
     const terrains = near[kind] ?? [];
+    const onTerrains = on[kind] ?? [];
+    const reach = onTerrains.length > 0 ? reachable(grid, grid.spawn) : null;
     const spots: { x: number; y: number }[] = [];
     for (let y = 0; y < grid.height; y++) {
       for (let x = 0; x < grid.width; x++) {
         const t = tileAt(grid, x, y)!;
+        if (reach) { // on the water: a bank tile beside it that the player can reach
+          if (onTerrains.includes(t.terrain) && !t.service && !blocked.has(`${x},${y}`) && bank(grid, { x, y }, reach)) spots.push({ x, y });
+          continue;
+        }
         if (!t.walkable || t.safe || t.service || blocked.has(`${x},${y}`)) continue;
         if (terrains.length > 0 && !AROUND.some(([dx, dy]) => terrains.includes(tileAt(grid, x + dx, y + dy)?.terrain ?? ''))) continue;
         spots.push({ x, y });
@@ -45,14 +55,22 @@ export function placeNodes(grid: FieldGrid, spec: FieldSpec, near: Record<string
     let placed = 0;
     for (const s of spots) {
       if (placed >= count) break;
-      if (blocked.has(`${s.x},${s.y}`) || !blocks(grid, s, open)) continue;
-      open--;
+      if (blocked.has(`${s.x},${s.y}`)) continue;
+      if (!onTerrains.length) {
+        if (!blocks(grid, s, open)) continue;
+        open--;
+      }
       nodes.push({ id: nodes.length, kind, x: s.x, y: s.y, rank: rng() });
       for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) blocked.add(`${s.x + dx},${s.y + dy}`);
       placed++;
     }
   }
   return nodes;
+}
+
+// True when a tile the player can reach (`reach`: indexes reachable from the spawn) lies beside p, within a climbing step.
+function bank(grid: FieldGrid, p: Point, reach: Set<number>): boolean {
+  return AROUND.some(([dx, dy]) => reach.has((p.y + dy) * grid.width + p.x + dx) && besideOk(grid, { x: p.x + dx, y: p.y + dy }, p));
 }
 
 // Blocks the tile at p when that keeps the rest reachable (`open` walkable tiles reachable before) with a tile

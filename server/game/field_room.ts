@@ -77,7 +77,7 @@ export class FieldRoom extends Room<{ state: FieldState; client: FieldClient }> 
     this.grid = field.grid;
     this.kind = field.kind;
     this.desk = new RoomDesk(FieldRoom.world, this.ref);
-    ({ grid: this.grid, view: this.view } = await this.desk.refresh(this.rng, field.grid, fieldView(this.ref, field.kind, field.grid)));
+    ({ grid: this.grid, view: this.view } = await this.desk.refresh(this.rng, field.grid, fieldView(this.ref, field.kind, field.grid, FieldRoom.world.data.cfg.blend.rank)));
     this.setTimestep((dt) => this.tick(dt), TICK_MS);
   }
 

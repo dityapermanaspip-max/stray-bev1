@@ -73,16 +73,17 @@ export async function gridFor(world: GameWorld, ref: string): Promise<{ grid: Fi
   if (!spec) return null;
   const grid = generateField(spec);
   const near = Object.fromEntries(Object.entries(world.data.cfg.gather.kinds).map(([k, v]) => [k, v.near]));
+  const on = Object.fromEntries(Object.entries(world.data.cfg.gather.kinds).map(([k, v]) => [k, v.on]));
   const wild = world.data.cfg.interior.wild; // a camp or cave is a node too: walked beside, then gone into
-  grid.nodes = placeNodes(grid, spec, near, (k) => !!world.data.cfg.gather.kinds[k] || !!wild[k]); // only kinds in config
+  grid.nodes = placeNodes(grid, spec, near, (k) => !!world.data.cfg.gather.kinds[k] || !!wild[k], on); // only kinds in config
   const entry = { grid, kind: spec.template.kind };
   world.grids.set(ref, entry);
   return entry;
 }
 
-export function fieldView(ref: string, kind: FieldKind, g: FieldGrid): FieldView {
+export function fieldView(ref: string, kind: FieldKind, g: FieldGrid, rank: string[]): FieldView {
   return {
-    ref, kind, width: g.width, height: g.height,
+    ref, rank, kind, width: g.width, height: g.height,
     tiles: g.tiles.map((t) => ({ t: t.terrain, b: t.biome, h: t.height, w: t.walkable, s: t.slope ?? -1, safe: !!t.safe, door: t.service ?? null })),
     exits: g.exits.map((e) => ({ id: e.id, x: e.x, y: e.y })),
     nodes: g.nodes.filter((n) => n.kind !== 'npc').map((n) => ({ x: n.x, y: n.y, kind: n.kind })),

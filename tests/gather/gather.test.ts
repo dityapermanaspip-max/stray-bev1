@@ -19,24 +19,26 @@ const meadow = parseBiome('meadow', {
   nodes: { rock: 3, fish: 2 },
 });
 const spec = (seed: number): FieldSpec => ({ template: openField, biomeA: meadow, biomeB: null, blend: { from: 0, to: 0 }, seed });
-const near = { fish: ['water'] };
-const nodesOf = (seed: number) => placeNodes(generateField(spec(seed)), spec(seed), near);
+const near = {};
+const on = { fish: ['water'] }; // a fishing spot stands on water, worked from the bank
+const place = (g: ReturnType<typeof generateField>, seed: number) => placeNodes(g, spec(seed), near, undefined, on);
+const nodesOf = (seed: number) => place(generateField(spec(seed)), seed);
 
-test('nodes: same seed same nodes, obstacles worked from beside, field stays connected, fish beside water', () => {
+test('nodes: same seed same nodes, obstacles worked from beside, field stays connected, fish on water', () => {
   assert.deepEqual(nodesOf(5), nodesOf(5));
   for (let seed = 1; seed <= 30; seed++) {
     const g = generateField(spec(seed));
     const before = reachable(g, g.spawn).size;
-    const nodes = placeNodes(g, spec(seed), near);
+    const nodes = place(g, seed);
     const seen = reachable(g, g.spawn);
-    assert.equal(seen.size, before - nodes.length, `seed ${seed}: blocking nodes cut nothing off`);
+    assert.equal(seen.size, before - nodes.filter((n) => n.kind !== 'fish').length, `seed ${seed}: blocking nodes cut nothing off`);
     for (const e of g.exits) assert.ok(seen.has(e.y * g.width + e.x), `seed ${seed}: exit ${e.id}`);
     assert.ok(nodes.filter((n) => n.kind === 'rock').length === 3, `seed ${seed} rocks`);
     for (const n of nodes) {
       assert.ok(!tileAt(g, n.x, n.y)?.walkable && !tileAt(g, n.x, n.y)?.service, 'a node is an obstacle');
       assert.ok(besideTiles(g, n).some((p) => seen.has(p.y * g.width + p.x)), `seed ${seed}: a reachable tile beside it`);
       for (const m of nodes) if (m !== n) assert.ok(Math.max(Math.abs(m.x - n.x), Math.abs(m.y - n.y)) > 1, `seed ${seed} neighbours`);
-      if (n.kind === 'fish') assert.ok([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => tileAt(g, n.x + dx, n.y + dy)?.terrain === 'water'));
+      if (n.kind === 'fish') assert.equal(tileAt(g, n.x, n.y)?.terrain, 'water', `seed ${seed}: a fishing spot is on the water`);
       assert.ok(!g.exits.some((e) => Math.abs(e.x - n.x) <= 1 && Math.abs(e.y - n.y) <= 1), 'not by an exit');
     }
   }
@@ -44,7 +46,7 @@ test('nodes: same seed same nodes, obstacles worked from beside, field stays con
 
 test('walking to a node ends beside it', () => {
   const g = generateField(spec(4));
-  g.nodes = placeNodes(g, spec(4), near);
+  g.nodes = place(g, 4);
   const n = g.nodes[0];
   const { path, node } = walkPlan(g, g.spawn, n, 400);
   assert.equal(node, n);

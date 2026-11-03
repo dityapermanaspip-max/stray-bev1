@@ -5,7 +5,10 @@ import type { CoreStats } from '../stats/derived.ts';
 import type { Rng } from '../util/rng.ts';
 import { placeVice } from '../vice/vice_repo.ts';
 import { cultureFor, loadCultures } from './cultures.ts';
+import { corridorTemplate } from './corridor_templates.ts';
 import { shuffle, type WorldPlan } from './plan.ts';
+import { parseTemplate } from '../field/parse.ts';
+import { HEX_DIRS } from '../field/links.ts';
 
 // Writes a planned world as a new round, in one transaction. Earlier rounds of the same status end.
 // Hexes get the species of their biome (world.biome_species): hex_max split by weight, start counts by
@@ -41,10 +44,16 @@ export async function writeWorld(
      SELECT $1, x.a, x.b, x.n FROM unnest($2::uuid[], $3::uuid[], $4::int[]) WITH ORDINALITY AS x(a, b, n, i) ORDER BY x.i RETURNING id::text`,
     [roundId, b.map((x) => ids[x.a]), b.map((x) => ids[x.b]), b.map((x) => x.corridors.length)],
   )).rows.map((r) => r.id);
-  const corridors = b.flatMap((x, i) => x.corridors.map((s, p) => ({ border: borderIds[i], position: p + 1, seed: s })));
+  const shapes = (await client.query<{ template_name: string; kind: string; width: number; height: number; params: Record<string, unknown> }>(
+    "SELECT template_name, kind, width, height, params FROM world.field_templates WHERE kind = 'corridor'")).rows
+    .map((t) => parseTemplate(t.template_name, t.kind, t.width, t.height, t.params));
+  const corridors = b.flatMap((x, i) => {
+    const dir = HEX_DIRS.findIndex(([dq, dr]) => h[x.a].q + dq === h[x.b].q && h[x.a].r + dr === h[x.b].r);
+    return x.corridors.map((s, p) => ({ border: borderIds[i], position: p + 1, seed: s, template: corridorTemplate(shapes, dir, s, TEMPLATES.corridor) }));
+  });
   await client.query(
-    `INSERT INTO world.corridors (border_id, position, template, seed) SELECT x.b, x.p, $4, x.s FROM unnest($1::uuid[], $2::int[], $3::bigint[]) AS x(b, p, s)`,
-    [corridors.map((c) => c.border), corridors.map((c) => c.position), corridors.map((c) => c.seed), TEMPLATES.corridor],
+    `INSERT INTO world.corridors (border_id, position, template, seed) SELECT x.b, x.p, x.t, x.s FROM unnest($1::uuid[], $2::int[], $3::bigint[], $4::text[]) AS x(b, p, s, t)`,
+    [corridors.map((c) => c.border), corridors.map((c) => c.position), corridors.map((c) => c.seed), corridors.map((c) => c.template)],
   );
 
   const pop: { ref: string; species: string; natives: number; corrupted: number; safe: number; max: number }[] = [];

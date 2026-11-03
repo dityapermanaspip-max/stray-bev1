@@ -79,11 +79,12 @@ export const RAW_CONFIG = new Map<string, unknown>([
     vice_rings: [1, 2],
   }],
   ['interior', { rooms: {}, wild: {camp: { rest_price: 0, ambush_permille: 100 }} }],
+  ['biome_blend', { rank: ['meadow', 'grove', 'desert'] }],
   ['gather', {
     chance_base: 0.8, chance_per_level: 0.02, guard_permille: 500,
     kinds: {
-      rock: { move: 'mining', tools: ['pick', 'hammer'], bonus_tools: ['pick'], bonus_mult: 1.3, uses: 6, refill_per_hour: 1, exp: 8, near: [] },
-      fish: { move: 'fishing', tools: ['rod'], bonus_tools: [], bonus_mult: 1, uses: 5, refill_per_hour: 1, exp: 8, near: ['water'] },
+      rock: { move: 'mining', tools: ['pick', 'hammer'], bonus_tools: ['pick'], bonus_mult: 1.3, uses: 6, refill_per_hour: 1, exp: 8, near: [], on: [] },
+      fish: { move: 'fishing', tools: ['rod'], bonus_tools: [], bonus_mult: 1, uses: 5, refill_per_hour: 1, exp: 8, near: [], on: ['water'] },
     },
   }],
   ['food', { duration_minutes: 30 }],

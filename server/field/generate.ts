@@ -1,4 +1,5 @@
 import { createRng, type Rng } from '../util/rng.ts';
+import { corridorExits, HEX_DIRECTIONS, hexExit, progress } from './exits.ts';
 import { layerSeed, valueNoise } from './noise.ts';
 import { connectField } from './reach.ts';
 import { applyTown } from './town.ts';
@@ -11,7 +12,6 @@ import type { Biome, Exit, FieldGrid, FieldSpec, Point, Tile } from './types.ts'
 // reachable by legal steps (climb.ts: one level up or down; reach.ts: levelled tiles, carved paths).
 
 const LAYER = { biome: 1, hills: 2, obstacles: 3, terrain: 4, lowland: 5 };
-const HEX_DIRECTIONS = 6;
 
 function weighted(rng: Rng, weights: Record<string, number>): string {
   const entries = Object.entries(weights).filter(([, w]) => w > 0);
@@ -37,19 +37,11 @@ const MINI = 1; // the block reaches this many tiles from the centre
 function exitsFor(spec: FieldSpec): Exit[] {
   const { width: w, height: h, kind } = spec.template;
   const mid = Math.floor(w / 2);
-  if (kind === 'corridor') return [{ id: 'a', x: mid, y: 0 }, { id: 'b', x: mid, y: h - 1 }];
+  if (kind === 'corridor') return spec.dir === undefined ? [{ id: 'a', x: mid, y: 0 }, { id: 'b', x: mid, y: h - 1 }] : corridorExits(spec.dir, w, h);
   if (kind === 'town') return [{ id: 'gate', x: mid, y: h - 1 }]; // a town field's only way out: back to its hex
   const gate = spec.gate ? [{ id: 'gate', ...gateAt(w, h) }] : [];
   // One exit per hex direction, where a ray from the center meets the edge.
-  const cx = (w - 1) / 2;
-  const cy = (h - 1) / 2;
-  return Array.from({ length: HEX_DIRECTIONS }, (_, d) => {
-    const angle = (d * 2 * Math.PI) / HEX_DIRECTIONS;
-    const dx = Math.cos(angle);
-    const dy = Math.sin(angle);
-    const t = Math.min(dx === 0 ? Infinity : cx / Math.abs(dx), dy === 0 ? Infinity : cy / Math.abs(dy));
-    return { id: `d${d}`, x: Math.round(cx + dx * t), y: Math.round(cy + dy * t) };
-  }).concat(gate);
+  return Array.from({ length: HEX_DIRECTIONS }, (_, d) => ({ id: `d${d}`, ...hexExit(d, w, h) })).concat(gate);
 }
 
 // Stamps the walled town block over the middle of a hex field that holds a town (drawn like town buildings).
@@ -95,9 +87,9 @@ export function generateField(spec: FieldSpec): FieldGrid {
 
   const tiles: Tile[] = [];
   for (let y = 0; y < height; y++) {
-    const along = template.kind === 'corridor' && height > 1 ? y / (height - 1) : 0.5;
-    const bShare = spec.blend.from + (spec.blend.to - spec.blend.from) * along;
     for (let x = 0; x < width; x++) {
+      const along = template.kind !== 'corridor' ? 0.5 : spec.dir === undefined ? (height > 1 ? y / (height - 1) : 0.5) : progress(exits[0], exits[1], x, y);
+      const bShare = spec.blend.from + (spec.blend.to - spec.blend.from) * along;
       const biome: Biome = biomeNoise(x, y) < bShare ? biomeB : biomeA;
       const hills = biomeA.hills.max + (biomeB.hills.max - biomeA.hills.max) * bShare;
       const steep = biomeA.hills.steep + (biomeB.hills.steep - biomeA.hills.steep) * bShare;

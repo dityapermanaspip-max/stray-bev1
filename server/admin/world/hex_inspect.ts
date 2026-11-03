@@ -16,7 +16,7 @@ export async function inspectHex(pool: pg.Pool, world: LabWorld, ref: string) {
   if (!spec) return `unknown field ${ref}`;
   const grid = generateField(spec);
   const kinds = world.data.cfg.gather.kinds;
-  grid.nodes = placeNodes(grid, spec, Object.fromEntries(Object.entries(kinds).map(([k, v]) => [k, v.near])), (k) => !!kinds[k]);
+  grid.nodes = placeNodes(grid, spec, Object.fromEntries(Object.entries(kinds).map(([k, v]) => [k, v.near])), (k) => !!kinds[k], Object.fromEntries(Object.entries(kinds).map(([k, v]) => [k, v.on])));
 
   const [hex, pop, taken, corpses, people, economy, stock, keepers] = await Promise.all([
     rows(pool, `SELECT h.q, h.r, h.ring, h.field_kind, h.field_template, h.biome, h.field_seed::text AS seed, k.name AS kingdom,

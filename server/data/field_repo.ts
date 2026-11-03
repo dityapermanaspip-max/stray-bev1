@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { corridorBlend } from '../field/generate.ts';
 import { parseBiome, parseTemplate } from '../field/parse.ts';
-import type { Border, Hex, WorldLinks } from '../field/links.ts';
+import { HEX_DIRS, type Border, type Hex, type WorldLinks } from '../field/links.ts';
 import type { Biome, FieldSpec, FieldTemplate } from '../field/types.ts';
 
 // Field templates, biomes, and the spec of a stored field (hex or corridor). Tiles are never stored.
@@ -43,19 +43,20 @@ export async function listFields(pool: pg.Pool, roundId: string): Promise<FieldR
   return res.rows.map(({ ref, kind, label }) => ({ ref, kind, label }));
 }
 
-type SpecRow = { template: string; biome_a: string | null; biome_b: string | null; seed: string; position: number | null; count: number | null; gate: boolean };
+type SpecRow = { template: string; biome_a: string | null; biome_b: string | null; seed: string; position: number | null; count: number | null; gate: boolean; dq: number | null; dr: number | null };
 
 // A hex is one biome (a hex that holds a town gets the gate in its middle); a town takes its hex's biome; a corridor
 // blends its border's two hex biomes by its position.
 export async function fieldSpec(pool: pg.Pool, data: FieldData, ref: string): Promise<FieldSpec | null> {
   const res = await pool.query<SpecRow>(
     `SELECT h.field_template AS template, h.biome AS biome_a, NULL AS biome_b, h.field_seed::text AS seed, NULL::int AS position, NULL::int AS count,
+       NULL::int AS dq, NULL::int AS dr,
        h.field_kind = 'town' AND EXISTS (SELECT 1 FROM world.towns t WHERE t.hex_id = h.id) AS gate
      FROM world.hexes h WHERE h.id::text = $1
      UNION ALL
-     SELECT t.template, h.biome, NULL, t.seed::text, NULL, NULL, false FROM world.towns t JOIN world.hexes h ON h.id = t.hex_id WHERE t.id::text = $1
+     SELECT t.template, h.biome, NULL, t.seed::text, NULL, NULL, NULL, NULL, false FROM world.towns t JOIN world.hexes h ON h.id = t.hex_id WHERE t.id::text = $1
      UNION ALL
-     SELECT c.template, a.biome, b.biome, c.seed::text, c.position, bo.corridor_count, false
+     SELECT c.template, a.biome, b.biome, c.seed::text, c.position, bo.corridor_count, b.q - a.q, b.r - a.r, false
      FROM world.corridors c
      JOIN world.borders bo ON bo.id = c.border_id
      JOIN world.hexes a ON a.id = bo.hex_a
@@ -70,7 +71,8 @@ export async function fieldSpec(pool: pg.Pool, data: FieldData, ref: string): Pr
   if (!template || !biomeA) return null;
   const biomeB = row.biome_b ? data.biomes.get(row.biome_b) ?? null : null;
   const blend = row.position !== null ? corridorBlend(row.position, row.count ?? 1) : { from: 0, to: 0 };
-  return { template, biomeA, biomeB, blend, seed: Number(BigInt(row.seed) & 0xffffffffn), gate: row.gate };
+  const dir = row.dq === null || row.dr === null ? -1 : HEX_DIRS.findIndex(([q, r]) => q === row.dq && r === row.dr);
+  return { template, biomeA, biomeB, blend, seed: Number(BigInt(row.seed) & 0xffffffffn), gate: row.gate, ...(dir >= 0 ? { dir } : {}) };
 }
 
 // The ring a field's creatures are rolled for: a hex's own ring; a corridor takes the ring of the hex whose

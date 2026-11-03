@@ -8,7 +8,7 @@ const weights = (v: unknown): Record<string, number> =>
   Object.fromEntries(Object.entries((v ?? {}) as Record<string, unknown>).map(([k, w]) => [k, Number(w) || 0]));
 
 export function parseTemplate(name: string, kind: string, width: number, height: number, params: Record<string, unknown>): FieldTemplate {
-  return { name, kind: kind as FieldKind, width, height, obstacleMult: Number(params.obstacle_mult ?? 1), town: parseTown(params.town) };
+  return { name, kind: kind as FieldKind, width, height, obstacleMult: Number(params.obstacle_mult ?? 1), town: parseTown(params.town), travel: params.travel === 'x' || params.travel === 'y' ? params.travel : null };
 }
 
 function parseTown(raw: unknown): TownLayout | null {
@@ -44,6 +44,9 @@ export function findFieldProblems(templates: FieldTemplate[], biomes: Biome[]): 
   const problems: string[] = [];
   for (const t of templates) {
     if (!(t.obstacleMult >= 0)) problems.push(`template ${t.name}: obstacle_mult must be 0 or more`);
+    if (t.travel && t.kind !== 'corridor') problems.push(`template ${t.name}: travel is for corridors`);
+    if (t.travel === 'x' && t.width < t.height) problems.push(`template ${t.name}: travel x needs width >= height`);
+    if (t.travel === 'y' && t.height < t.width) problems.push(`template ${t.name}: travel y needs height >= width`);
     problems.push(...findTownProblems(t));
   }
   for (const b of biomes) {

@@ -32,7 +32,7 @@ export const emptyGear = (): CombatGear => ({
 });
 
 // Ammo the bag holds, by type (all arrows count, whatever the stack).
-const ammoTotals = (gear: CombatGear): [string, number][] => {
+export const ammoTotals = (gear: CombatGear): [string, number][] => {
   const out = new Map<string, number>();
   for (const a of gear.ammo) out.set(a.type, (out.get(a.type) ?? 0) + a.qty);
   return [...out];

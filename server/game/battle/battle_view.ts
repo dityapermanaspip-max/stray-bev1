@@ -1,10 +1,11 @@
-import type { BattleEntity, BattleEvent } from '../battle/types.ts';
-import { equippedMoves } from '../loadout/loadout.ts';
-import type { LinePicker } from '../presentation/line_picker.ts';
-import type { Rng } from '../util/rng.ts';
-import { VICE_NAME } from '../vice/vice_check.ts';
-import { BOSS_NAME } from '../db/startup_check.ts';
-import type { BattleEventView, BattleFighter, BattleView, Word } from '../../shared/battle.ts';
+import type { BattleEntity, BattleEvent } from '../../battle/types.ts';
+import { equippedMoves } from '../../loadout/loadout.ts';
+import type { LinePicker } from '../../presentation/line_picker.ts';
+import type { Rng } from '../../util/rng.ts';
+import type { Figure } from '../../config/world_config.ts';
+import { VICE_NAME } from '../../vice/vice_check.ts';
+import { BOSS_NAME } from '../../db/startup_check.ts';
+import type { BattleEventView, BattleFighter, BattleView, Word } from '../../../shared/battle.ts';
 import type { Fight } from './battle_setup.ts';
 
 // What the player's client sees of a battle: names, body-state tiers with their words, damage and heal numbers,
@@ -14,13 +15,18 @@ export const MOVE_NAME = 'move_name_';
 export const SPECIES_NAME = 'species_name_';
 export const BODY_WORD = 'body_word.';
 
-export type Words = { lines: LinePicker; rng: Rng; moves: ReadonlyMap<string, { target: string; rowRule?: string }> };
+export type Words = {
+  lines: LinePicker; rng: Rng; moves: ReadonlyMap<string, { target: string; rowRule?: string }>;
+  figures?: { vice: Record<string, Figure>; boss: Figure | null }; // how vices and the boss are drawn
+};
 
 const named = (w: Words, key: string, fallback: string) => w.lines.pick(w.rng, key)?.text ?? fallback;
 export const word = (w: Words, resource: string, tier: number): Word => ({ tier, text: w.lines.pick(w.rng, BODY_WORD + resource, tier)?.text ?? null });
 
 function fighterName(w: Words, f: Fight, e: BattleEntity): string {
   if (e === f.player) return f.order.name;
+  const mate = f.companions.find((c) => c.entity === e);
+  if (mate) return mate.state.name; // a companion fought as themselves: their name, not a species line
   const foe = f.order.foes[f.foes.indexOf(e)];
   if (foe?.vice) return named(w, VICE_NAME + foe.vice.type, 'vice');
   if (foe?.boss) return named(w, BOSS_NAME, 'boss');
@@ -28,10 +34,14 @@ function fighterName(w: Words, f: Fight, e: BattleEntity): string {
   return named(w, SPECIES_NAME + species, species);
 }
 
+const figureOf = (w: Words, foe: Fight['order']['foes'][number] | undefined): Figure | null =>
+  (foe?.vice ? w.figures?.vice[foe.vice.type] : foe?.boss ? w.figures?.boss : null) ?? null;
+
 export function fighterView(w: Words, f: Fight, e: BattleEntity): BattleFighter {
   const you = e === f.player;
+  const foe = f.order.foes[f.foes.indexOf(e)];
   return {
-    id: e.id, side: e.side, slot: e.slot, row: e.row, name: fighterName(w, f, e), you, corrupted: e.corrupted, downed: e.hp <= 0,
+    id: e.id, side: e.side, slot: e.slot, row: e.row, name: fighterName(w, f, e), you, corrupted: e.corrupted, look: foe && !foe.vice && !foe.boss ? foe.species : null, figure: figureOf(w, foe), downed: e.hp <= 0,
     hp: word(w, 'hp', e.tiers.hp),
     stamina: you ? word(w, 'stamina', e.tiers.stamina) : null,
     mana: you ? word(w, 'mana', e.tiers.mana) : null,
@@ -67,7 +77,7 @@ export function eventsFor(w: Words, f: Fight, events: BattleEvent[]): BattleEven
   const out: BattleEventView[] = [];
   for (const e of events) {
     switch (e.type) {
-      case 'use': case 'damage': case 'miss': case 'heal': case 'interrupt': case 'downed': case 'counter': case 'moved':
+      case 'use': case 'damage': case 'miss': case 'heal': case 'interrupt': case 'downed': case 'counter': case 'moved': case 'lock':
         out.push(e);
         break;
       case 'line':

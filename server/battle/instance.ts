@@ -1,6 +1,7 @@
 import type { Progress } from '../growth/level_up.ts';
 import { createRng, pick } from '../util/rng.ts';
 import { chooseAction, usableMoves } from './ai.ts';
+import { awaitsCommand, idleAction, lockedTarget, lockKind, setLock, turnOrder } from './command.ts';
 import { BattleCore } from './core.ts';
 import { growthRates, levelMult } from './damage.ts';
 import type { EffectResult, UseContext } from './effects/hit.ts';
@@ -8,6 +9,7 @@ import { dropStance } from './effects/counter.ts';
 import { dropThrownWeapon, spendThrown } from './effects/gear_hooks.ts';
 import { HANDLERS } from './effects/registry.ts';
 import { payMoveExp } from './exp.ts';
+import { fleeRoll } from './flee.ts';
 import { effectTurn } from './over_time.ts';
 import { entityCost, expandTargets, isAlive, strayTargets, validTargets } from './rules.ts';
 import type { BattleData, BattleEntity, BattleEvent, MoveDef, PendingAction, Side } from './types.ts';
@@ -26,6 +28,7 @@ export class BattleInstance {
   private stepMs = 0;
   private effectMs = 0;
   winner: Side | null = null;
+  fled = false; // the party ran away: the fight is over with no winner
 
   constructor(data: BattleData, setup: BattleSetup) {
     this.core = new BattleCore(data, setup.entities, createRng(setup.seed), setup.progress, setup.summonerSides);
@@ -35,16 +38,61 @@ export class BattleInstance {
     return this.core.entities;
   }
 
-  // Player intent. Validated here; the action runs when the gauge is full.
-  submit(actorId: string, moveName: string, targetId: string): string | null {
+  // Player intent. Validated here; the action runs when the gauge is full. No target: the remembered one
+  // (command flow); a move that cannot reach it is refused and the turn stays open.
+  submit(actorId: string, moveName: string, targetId = ''): string | null {
     const actor = this.core.byId(actorId);
     if (!actor || actor.controller !== 'player') return 'not_your_entity';
     if (!isAlive(actor) || this.winner) return 'cannot_act';
     const move = usableMoves(this.core, actor).find((m) => m.name === moveName);
     if (!move) return 'move_unusable';
-    if (!validTargets(this.core.entities, actor, move).some((e) => e.id === targetId)) return 'bad_target';
-    actor.queued = { move: moveName, targetIds: [targetId] };
+    const target = targetId ? validTargets(this.core.entities, actor, move).find((e) => e.id === targetId) : lockedTarget(this.core, actor, move);
+    if (!target) return 'bad_target';
+    const kind = lockKind(move);
+    if (kind) setLock(this.core, actor, kind, target.id);
+    actor.lastMove = moveName;
+    actor.queued = { move: moveName, targetIds: [target.id] };
     return null;
+  }
+
+  // The player's party tries to run (battle/flee.ts): needs a full gauge, never from the boss. 'fled' ends the fight;
+  // 'failed' spends the turn (the gauge starts again); anything else is a refusal and nothing changes.
+  flee(actorId: string): 'fled' | 'failed' | 'cannot' | 'boss' {
+    const actor = this.core.byId(actorId);
+    if (!actor || actor.controller !== 'player' || !isAlive(actor) || actor.phase !== 'ready' || this.winner || this.fled) return 'cannot';
+    const alive = (side: Side) => this.core.entities.filter((x) => x.side === side && isAlive(x));
+    if (alive('enemy').some((x) => x.kind === 'boss')) return 'boss';
+    const runner = (x: BattleEntity) => ({ speed: this.core.stat(x, 'speed'), luck: x.stats.luck });
+    if (fleeRoll(this.core.cfg.combat.flee, alive(actor.side).map(runner), alive(actor.side === 'party' ? 'enemy' : 'party').map(runner), this.core.rng)) {
+      this.fled = true;
+      return 'fled';
+    }
+    actor.queued = null;
+    this.refill(actor);
+    return 'failed';
+  }
+
+  // A turn spent on something outside the moves (a gear swap, battle_gear.ts): needs a full gauge; `change` runs, then the gauge starts again.
+  restock(actorId: string, change: () => boolean): boolean {
+    const actor = this.core.byId(actorId);
+    if (!actor || actor.controller !== 'player' || !isAlive(actor) || actor.phase !== 'ready' || this.winner || this.fled) return false;
+    if (!change()) return false;
+    actor.queued = null;
+    this.refill(actor);
+    return true;
+  }
+
+  // Change the remembered target without using a move. Same reach check as a move's target (any usable move of that kind).
+  setTarget(actorId: string, targetId: string): string | null {
+    const actor = this.core.byId(actorId);
+    const target = this.core.byId(targetId);
+    if (!actor || actor.controller !== 'player' || !target || !isAlive(target) || this.winner) return 'bad_target';
+    setLock(this.core, actor, target.side === actor.side ? 'ally' : 'foe', target.id);
+    return null;
+  }
+
+  turnOrder(): string[] {
+    return turnOrder(this.core);
   }
 
   // What a fighter could use right now, and on whom (for the move menu).
@@ -57,8 +105,9 @@ export class BattleInstance {
   tick(dtMs: number): BattleEvent[] {
     const step = this.core.cfg.combat.atbTickMs;
     this.stepMs += dtMs;
-    while (this.stepMs >= step && !this.winner) {
+    while (this.stepMs >= step && !this.winner && !this.fled) {
       this.stepMs -= step;
+      if (this.core.cfg.combat.commandMode === 'wait' && this.core.entities.some((e) => awaitsCommand(this.core, e))) continue;
       this.step(step);
     }
     const events = this.core.events;
@@ -92,7 +141,7 @@ export class BattleInstance {
       if (e.atb >= c.atbFull) e.phase = 'ready';
     }
     if (e.phase === 'ready') {
-      const action = e.controller === 'ai' ? chooseAction(this.core, e, this.core.cfg.aiHealBelowTier) : e.queued;
+      const action = e.controller === 'ai' ? this.aiAction(e) : e.queued ?? this.idleAction(e, ms);
       if (action) this.begin(e, action);
       else if (e.controller === 'ai' || usableMoves(this.core, e).length === 0) this.refill(e); // nothing usable: the turn passes
       return;
@@ -105,7 +154,20 @@ export class BattleInstance {
     }
   }
 
+  private aiAction(e: BattleEntity): PendingAction | null {
+    return chooseAction(this.core, e, this.core.cfg.aiHealBelowTier);
+  }
+
+  // A commanded fighter that waits too long repeats its last move on its locked target (the AI picks if it cannot).
+  private idleAction(e: BattleEntity, ms: number): PendingAction | null {
+    const limit = this.core.cfg.combat.idleAutoMs;
+    e.idleMs = (e.idleMs ?? 0) + ms;
+    if (limit <= 0 || e.idleMs < limit) return null;
+    return idleAction(this.core, e, () => this.aiAction(e));
+  }
+
   private refill(e: BattleEntity): void {
+    e.idleMs = 0;
     e.phase = 'filling';
     e.atb = 0;
   }
@@ -124,6 +186,7 @@ export class BattleInstance {
     }
     spendThrown(e, move);
     e.queued = null;
+    e.idleMs = 0;
     e.action = action;
     e.phase = 'winding';
     e.timerMs = move.windup * 1000;
@@ -187,7 +250,12 @@ export class BattleInstance {
   // A target that fell during wind-up is replaced by another valid one.
   private retarget(e: BattleEntity, move: MoveDef, action: PendingAction): BattleEntity | undefined {
     const valid = validTargets(this.core.entities, e, move);
-    return valid.find((t) => t.id === action.targetIds[0]) ?? pick(this.core.rng, valid);
+    const kept = valid.find((t) => t.id === action.targetIds[0]);
+    if (kept) return kept;
+    const next = pick(this.core.rng, valid);
+    const kind = lockKind(move);
+    if (next && kind && e.controller === 'player') setLock(this.core, e, kind, next.id); // the lock follows to the new pick
+    return next;
   }
 
   private checkEnd(): void {

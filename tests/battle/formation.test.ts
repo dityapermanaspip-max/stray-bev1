@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { BattleCore } from '../../server/battle/core.ts';
 import { HANDLERS } from '../../server/battle/effects/registry.ts';
-import { placeFoes, rowOf, slotBehind } from '../../server/battle/formation.ts';
+import { placeFoes, placeParty, rowOf, slotBehind } from '../../server/battle/formation.ts';
 import { validTargets } from '../../server/battle/rules.ts';
 import type { BattleEntity } from '../../server/battle/types.ts';
 import { createRng } from '../../server/util/rng.ts';
@@ -23,6 +23,18 @@ test('foes fill the front first, at most 7', () => {
   assert.deepEqual(placeFoes(f, 3), [1, 2, 3]);
   assert.deepEqual(placeFoes(f, 6), [1, 2, 3, 4, 5, 6]);
   assert.equal(placeFoes(f, 9).length, 7);
+});
+
+test('companions fill the party around the player, front first, up to party_max', () => {
+  assert.deepEqual(placeParty(f, [2], 3), [1, 3, 4]); // the player holds 2, next come 1, 3, 4
+  assert.deepEqual(placeParty(f, [7], 3), [1, 2, 3]); // a back-row player does not push a packed front
+  assert.deepEqual(placeParty(f, [1, 3], 2), [2, 4]); // seats stay hers, the same slot never twice
+  assert.deepEqual(placeParty(f, [1], 3).length, 3);
+});
+
+test('a party never exceeds party_max members', () => {
+  assert.deepEqual(placeParty(f, [1, 2, 3], 3), [4]); // the player and two companions: one seat left
+  assert.deepEqual(placeParty(f, [1, 2, 3, 4], 1), []); // full
 });
 
 test('no melee from behind a living front row; ranged works from anywhere and reaches the back', () => {

@@ -19,10 +19,10 @@ function setup(items: string[]) {
 const pieceOf = (inv: Inventory, item: string, nth = 0) => ({ piece: inv.pieces.filter((p) => p.item === item)[nth].id });
 const slotsOf = (inv: Inventory) => Object.fromEntries([...equipped(inv)].map(([slot, held]) => [slot, held.item]));
 
-test('swaps follow the loadout rule: never in battle, town only unless the flag is on', () => {
+test('gear changes anywhere but in battle (the move loadout is the town-only swap)', () => {
   const { inv, progress } = setup(['iron_sword']);
   assert.equal(equipGear(cfg, catalog, inv, progress, pieceOf(inv, 'iron_sword'), { inTown: true, inBattle: true }), 'in_battle');
-  assert.equal(equipGear(cfg, catalog, inv, progress, pieceOf(inv, 'iron_sword'), { inTown: false, inBattle: false }), 'not_in_town');
+  assert.equal(typeof equipGear(cfg, catalog, inv, progress, pieceOf(inv, 'iron_sword'), { inTown: false, inBattle: false }), 'object');
   assert.equal(typeof equipGear(ANYWHERE, catalog, inv, progress, pieceOf(inv, 'iron_sword'), { inTown: false, inBattle: false }), 'object');
 });
 

@@ -3,7 +3,7 @@ import { WebSocketTransport } from '@colyseus/ws-transport';
 import { clearBattles } from '../data/battle_repo.ts';
 import { createPool } from '../db/pool.ts';
 import { BATTLE_ROOM } from '../../shared/battle.ts';
-import { BattleRoom } from './battle_room.ts';
+import { BattleRoom } from './battle/battle_room.ts';
 import { FIELD_ROOM, type WhereAnswer } from '../../shared/field.ts';
 import { FieldRoom } from './field_room.ts';
 import { startTicker } from './ticker.ts';

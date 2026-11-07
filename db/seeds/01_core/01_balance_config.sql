@@ -38,6 +38,8 @@ INSERT INTO config.balance_config (config_key, value, description) VALUES
 ('combat.atb_tick_ms', '100', 'Server ATB tick length in milliseconds.'),
 ('combat.atb_fill_per_speed', '1', 'ATB gauge fill per tick per point of speed.'),
 ('combat.atb_full', '100', 'Gauge value that grants a turn.'),
+('battle.command_mode', '"active"', 'active: the clock keeps running while the player chooses. wait: it stops while a commanded fighter is ready.'),
+('battle.idle_auto_seconds', '3', 'A commanded fighter with a full gauge and no command repeats the last move on the locked target after this long.'),
 ('combat.disconnect_grace_ms', '5000', 'Time a disconnected player acts on the default move.'),
 ('ammo_recovery_permille', '500', 'Out of 1000: each fired arrow or thrown item recovered on a win. The thrower''s luck adds to it.'),
 ('luck_drop_bonus_cap', '0.1', 'Highest bonus luck adds to a drop roll. Never applies to keys.'),

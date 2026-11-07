@@ -18,13 +18,16 @@ export type TalkOut = { view: TalkView; door: string | null };
 export type TalkCtx = { world: GameWorld; rng: Rng; playerId: string; townRef: string };
 const line = (c: TalkCtx, key: string) => c.world.data.lines.pick(c.rng, key, 0, 'self')?.text ?? null;
 
+// A craftsman's keeper opens the recipes of their facility (the same panel as the town door).
+const isCraft = (c: TalkCtx, role: string) => c.world.recipes.some((r) => r.facility === role);
+
 export async function talkView(c: TalkCtx, npc: Placed, text: string | null): Promise<TalkView> {
   const { cfg } = c.world.data;
   const l = cfg.standing.ladder;
   const b = await bearingOf(c.world, c.rng, c.playerId, npc.entity);
   const refused = npc.role === 'shop' && shopRefused(cfg.standing, await shopTalk(c.world, c.playerId, c.townRef, c.rng));
   const acts: { act: TalkAct; price: number | null }[] = [{ act: 'talk', price: null }];
-  if (npc.role === 'shop' && !refused) acts.push({ act: 'trade', price: null });
+  if ((npc.role === 'shop' && !refused) || isCraft(c, npc.role)) acts.push({ act: 'trade', price: null });
   if (npc.role === 'inn') acts.push({ act: 'rest', price: cfg.town.innPrice });
   const gifts = b && unlocked(l, 'gift', b.tier) ? await giftable(c) : [];
   if (gifts.length > 0) acts.push({ act: 'gift', price: null });
@@ -63,7 +66,7 @@ export async function talkAct(c: TalkCtx, npc: Placed, req: TalkRequest): Promis
     case 'recruit': reply = await recruitNpc(world, rng, playerId, npc.entity); break;
     case 'pay': reply = await payNpc(world, rng, playerId, npc.entity); break;
     case 'dismiss': reply = await dismissNpc(world, rng, playerId, npc.entity); break;
-    case 'trade': door = npc.role === 'shop' ? 'shop' : null; break;
+    case 'trade': door = npc.role === 'shop' || isCraft(c, npc.role) ? npc.role : null; break;
     case 'rest': door = npc.role === 'inn' ? 'inn' : null; break;
     default: break;
   }

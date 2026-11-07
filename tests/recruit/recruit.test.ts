@@ -4,7 +4,7 @@ import type { TraitOption } from '../../server/growth/traits.ts';
 import type { UnlockRule } from '../../server/growth/unlocks.ts';
 import { rollRecruit } from '../../server/recruit/recruit_roll.ts';
 import {
-  findTemplateProblems, mercenaryWage, notablesFor, parseTemplate, poolShare, poolSize, recruitConfig, recruitThreshold,
+  findTemplateProblems, mercenaryWage, notablesFor, parseTemplate, poolShare, poolSize, recruitConfig, recruitReady, recruitThreshold,
 } from '../../server/recruit/recruit_rules.ts';
 import { planRoster } from '../../server/recruit/roster.ts';
 import { createRng } from '../../server/util/rng.ts';
@@ -52,6 +52,15 @@ test('the threshold grows with move levels and doubles for a lineage offer; merc
   assert.equal(recruitThreshold(rc, 20, false), 30);
   assert.equal(recruitThreshold(rc, 20, true), 60);
   assert.equal(mercenaryWage(rc, 20), 15);
+});
+
+test('joining needs favor, charm (as favor) and fame to beat the threshold; lineage twice as much', () => {
+  assert.equal(recruitReady(rc, 1, { favor: 30, charm: 0, fame: 0, levels: 20, lineage: false }), true);
+  assert.equal(recruitReady(rc, 1, { favor: 29, charm: 0, fame: 0, levels: 20, lineage: false }), false);
+  assert.equal(recruitReady(rc, 1, { favor: 27, charm: 3, fame: 0, levels: 20, lineage: false }), true); // charm fills the gap
+  assert.equal(recruitReady(rc, 2, { favor: 26, charm: 2, fame: 0, levels: 20, lineage: false }), true);
+  assert.equal(recruitReady(rc, 1, { favor: 30, charm: 5, fame: 4, levels: 20, lineage: true }), false); // 60 for a child
+  assert.equal(recruitReady(rc, 1, { favor: 55, charm: 3, fame: 2, levels: 20, lineage: true }), true);
 });
 
 test('a roster plan: notables, one offer per lineage template and parent, the pool up to its share', () => {

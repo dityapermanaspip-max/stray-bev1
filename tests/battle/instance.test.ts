@@ -97,3 +97,39 @@ test('same seed replays the same battle', () => {
     battle([fighter('p', 'party', { controller: 'ai' }), fighter('e', 'enemy', { controller: 'ai' })], 42).inst;
   assert.deepEqual(run(make(), 30_000), run(make(), 30_000));
 });
+
+test('flee: needs a full gauge, never from the boss, ends with no winner on success, spends the turn on failure', () => {
+  const fast = stats({ str: 30, dex: 30, luck: 30 }), slow = stats({ str: 1, dex: 1, luck: 0 });
+  const boss = battle([fighter('p', 'party', { stats: fast }), fighter('b', 'enemy', { kind: 'boss', stats: slow })]);
+  assert.equal(boss.inst.flee('p'), 'cannot'); // the gauge is not full yet
+  run(boss.inst, 5_000);
+  assert.equal(boss.inst.flee('p'), 'boss');
+  assert.equal(boss.inst.fled, false);
+
+  const easy = battle([fighter('p', 'party', { stats: fast }), fighter('e', 'enemy', { stats: slow })]);
+  run(easy.inst, 5_000);
+  assert.equal(easy.inst.flee('p'), 'fled');
+  assert.equal(easy.inst.fled, true);
+  assert.equal(easy.inst.winner, null);
+
+  let failed: ReturnType<typeof battle> | null = null;
+  for (let seed = 1; seed < 60 && !failed; seed++) {
+    const hard = battle([fighter('p', 'party', { stats: stats({ str: 30, dex: 3, end: 30, luck: 0 }) }), fighter('e', 'enemy', { stats: stats({ str: 1, dex: 30, luck: 30 }) })], seed);
+    for (let t = 0; t < 120_000 && hard.inst.entities[0].phase !== 'ready' && !hard.inst.winner; t += 100) hard.inst.tick(100); // until the gauge is full
+    if (hard.inst.flee('p') === 'failed') failed = hard;
+  }
+  assert.ok(failed, 'a failed try happens');
+  assert.equal(failed.inst.flee('p'), 'cannot'); // the gauge started again
+});
+
+test('restock (a gear swap) needs a full gauge, runs once, and spends the turn', () => {
+  const { inst } = battle([fighter('p', 'party', { stats: stats({ str: 30, dex: 30 }) }), fighter('e', 'enemy', { stats: stats({ str: 1, dex: 1, luck: 0 }) })]);
+  let ran = 0;
+  assert.equal(inst.restock('p', () => (ran++, true)), false); // not ready yet
+  assert.equal(ran, 0);
+  run(inst, 5_000);
+  assert.equal(inst.restock('p', () => false), false); // the swap itself was refused: nothing spent
+  assert.equal(inst.restock('p', () => (ran++, true)), true);
+  assert.equal(ran, 1);
+  assert.equal(inst.restock('p', () => (ran++, true)), false); // the gauge started again
+});

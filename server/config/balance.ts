@@ -7,6 +7,7 @@ import { interiorConfig, type InteriorConfig } from './interior_config.ts';
 import { growthConfig, type GrowthConfig } from './growth_config.ts';
 import { standingConfig, type StandingConfig } from './standing_config.ts';
 import { worldGenConfig, type WorldGenConfig } from './worldgen_config.ts';
+import type { FleeConfig } from '../battle/flee.ts';
 import { bossConfig, ringConfig, viceConfig, type BossConfig, type RingConfig, type ViceConfig } from './world_config.ts';
 import { clockConfig, economyConfig, townTickConfig, type ClockConfig, type EconomyConfig, type TownTickConfig } from './town_config.ts';
 import type { LuckConfig } from '../util/luck.ts';
@@ -51,9 +52,11 @@ export type CombatConfig = {
   stunImmunityTurns: number;
   atbTickMs: number;
   atbFillPerSpeed: number;
-  atbFull: number;
+  atbFull: number; flee: FleeConfig; // flee: running away (battle/flee.ts)
   effectTurnMs: number;
   magicStaminaShare: number;
+  commandMode: 'active' | 'wait'; // battle.command_mode
+  idleAutoMs: number; // battle.idle_auto_seconds in ms
   reachStrayChance: number; // a reach move (spear) used from behind a living front row hits an ally instead
 };
 
@@ -200,9 +203,12 @@ export function buildBalance(raw: Map<string, unknown>): BalanceConfig {
       atbTickMs: num('combat.atb_tick_ms'),
       atbFillPerSpeed: num('combat.atb_fill_per_speed'),
       atbFull: num('combat.atb_full'),
+      flee: need('combat.flee'),
       effectTurnMs: num('combat.effect_turn_ms'),
       magicStaminaShare: num('combat.magic_stamina_share'),
       reachStrayChance: num('combat.reach_stray_chance'),
+      commandMode: need<string>('battle.command_mode') === 'wait' ? 'wait' : 'active',
+      idleAutoMs: num('battle.idle_auto_seconds') * 1000,
     },
     growth,
     bodyTiers: need('body_tiers'),

@@ -54,17 +54,24 @@ export function findRingProblems(rings: RingConfig, species: { name: string; rin
 // find_permille: chance an encounter in a vice's hex is the vice itself (finding one is hard: rumors, slim odds).
 // race: what a vice is made of (its body parts); moves: per type, the moves it knows from birth (all open, they train
 // its stat); budget_bonus: move levels on top of its ring's creature budget.
+// How a vice or the boss is drawn in battle: an actor sheet (path under public/assets/actors), a colour wash, a size.
+export type Figure = { sheet: string; tint: number | null; scale: number };
+type RawFigure = { sheet: string; tint?: string; scale?: number };
+export const figureConfig = (raw: RawFigure): Figure => ({ sheet: raw.sheet, tint: raw.tint ? parseInt(raw.tint.replace('#', ''), 16) : null, scale: raw.scale ?? 1 });
+
 export type ViceConfig = {
   types: ('str' | 'dex' | 'int' | 'end' | 'luck' | 'charm')[]; mainWeight: number; findPermille: number;
-  race: string; budgetBonus: number; moves: Record<string, string[]>;
+  race: string; budgetBonus: number; moves: Record<string, string[]>; figures: Record<string, Figure>; // figures: by type
 };
 
 export function viceConfig(raw: {
   types: ViceConfig['types']; main_weight: number; find_permille: number; race?: string; budget_bonus?: number; moves?: Record<string, string[]>;
+  figures?: Record<string, RawFigure>;
 }): ViceConfig {
   return {
     types: raw.types, mainWeight: raw.main_weight, findPermille: raw.find_permille,
     race: raw.race ?? 'human', budgetBonus: raw.budget_bonus ?? 0, moves: raw.moves ?? {},
+    figures: Object.fromEntries(Object.entries(raw.figures ?? {}).map(([t, f]) => [t, figureConfig(f)])),
   };
 }
 
@@ -84,15 +91,15 @@ export function findViceProblems(vice: ViceConfig, moves: ReadonlySet<string>): 
 // for good; the sum never passes max_weakening. Weakening lowers every core stat by that share for the fight.
 export type BossConfig = {
   race: string; moves: string[]; moveBudget: number; expPerVice: number; maxWeakening: number;
-  perKey: number; duplicateFalloff: number; setWeakening: number;
+  perKey: number; duplicateFalloff: number; setWeakening: number; figure: Figure | null;
 };
 
 export function bossConfig(
-  raw: { race: string; moves: string[]; move_budget: number; exp_per_vice: number; max_weakening: number },
+  raw: { race: string; moves: string[]; move_budget: number; exp_per_vice: number; max_weakening: number; figure?: RawFigure },
   keys: { per_key: number; duplicate_falloff: number }, setWeakening: number,
 ): BossConfig {
   return {
     race: raw.race, moves: raw.moves, moveBudget: raw.move_budget, expPerVice: raw.exp_per_vice, maxWeakening: raw.max_weakening,
-    perKey: keys.per_key, duplicateFalloff: keys.duplicate_falloff, setWeakening,
+    perKey: keys.per_key, duplicateFalloff: keys.duplicate_falloff, setWeakening, figure: raw.figure ? figureConfig(raw.figure) : null,
   };
 }

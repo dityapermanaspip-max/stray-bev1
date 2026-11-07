@@ -73,7 +73,13 @@ FROM (VALUES
   ('recruit.dismissed', 'neutral', 'We part without a quarrel.'),
   ('recruit.dismissed', 'neutral', 'They gather their things. Good luck, they say.'),
   ('recruit.dismissed', 'neutral', 'They leave. The place beside me is empty.'),
-  ('recruit.dismissed', 'neutral', 'They look back once and then they are gone.')
+  ('recruit.dismissed', 'neutral', 'They look back once and then they are gone.'),
+  ('npc.offer', 'warm', 'My child has been studying you from the doorway. Ask them yourself, and do it kindly: they would walk with you.'),
+  ('npc.offer', 'warm', 'They have learned all this house can teach. They stand here when I work; ask them, and they may follow you.'),
+  ('npc.offer', 'warm', 'I trust you with something rarer than coin: my own. Ask them before the road takes you on.'),
+  ('npc.offer', 'neutral', 'The young one of the house wants to travel. They are here more often than not.'),
+  ('npc.offer', 'neutral', 'They learned all they could from me. The road would teach them better, they say.'),
+  ('npc.offer', 'warm', 'Speak to the one working beside me. Their mind is half out the door already.')
 ) AS x(condition_key, expression, text)
 JOIN presentation.speakers s ON s.speaker_name = 'generic'
 ON CONFLICT DO NOTHING;

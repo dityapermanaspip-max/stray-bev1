@@ -45,9 +45,9 @@ export type StatusPanel = {
 };
 
 // Client -> server requests (answered with StatusPanel). move null empties the slot.
-export type LoadoutRequest = { slot: number; move: string | null };
-export type GearRequest = { wear: string; slot?: string } | { remove: string }; // wear: a bag ref; remove: a gear slot
-export type FormationRequest = { slot: number }; // a battle slot; town only, like loadout changes
+export type LoadoutRequest = { slot: number; move: string | null; id?: string }; // id: a companion (tier loadout, config)
+export type GearRequest = { wear: string; slot?: string; id?: string } | { remove: string; id?: string }; // wear: a bag ref; remove: a gear slot; id: a companion
+export type FormationRequest = { slot: number; id?: string }; // a battle slot; town only, like loadout changes; id: a companion
 export type EatRequest = { ref: string }; // a bag ref; answered with StatusPanel (its line says how it went)
 export type DropRequest = { ref: string; qty: number }; // throw away qty of a bag ref (not worn, never a key); answered with StatusPanel
 

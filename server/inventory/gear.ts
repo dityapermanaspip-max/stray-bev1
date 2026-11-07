@@ -1,6 +1,6 @@
 import type { BalanceConfig } from '../config/balance.ts';
 import type { Progress } from '../growth/level_up.ts';
-import { canSwap, type SwapPlace } from '../loadout/loadout.ts';
+import type { SwapPlace } from '../loadout/loadout.ts';
 import { stackKey, type Inventory } from './bag.ts';
 import { fitsSlot, type ItemCatalog } from './items.ts';
 
@@ -49,6 +49,9 @@ function find(inv: Inventory, ref: GearRef): { item: string; slot: string | null
 const sameRef = (a: GearRef, b: GearRef) =>
   'piece' in a ? 'piece' in b && a.piece === b.piece : 'stack' in b && a.stack === b.stack;
 
+// Gear changes anywhere, even overloaded (only a battle stops it); the move loadout is the town-only swap.
+const blockedBy = (place: SwapPlace): GearError | null => (place.inBattle ? 'in_battle' : null);
+
 export function equipGear(
   cfg: BalanceConfig,
   catalog: ItemCatalog,
@@ -59,8 +62,8 @@ export function equipGear(
   wanted: string | null = null,
   dual = false,
 ): GearError | GearChange {
-  const blocked = canSwap(cfg, place);
-  if (blocked) return blocked as GearError;
+  const blocked = blockedBy(place);
+  if (blocked) return blocked;
   const held = find(inv, ref);
   if (!held) return 'not_held';
   const def = catalog.get(held.item)!;
@@ -116,8 +119,8 @@ export function equipGear(
 }
 
 export function unequipGear(cfg: BalanceConfig, inv: Inventory, slot: string, place: SwapPlace): GearError | GearChange {
-  const blocked = canSwap(cfg, place);
-  if (blocked) return blocked as GearError;
+  const blocked = blockedBy(place);
+  if (blocked) return blocked;
   if (!cfg.gear.slots.some((s) => s.slot === slot)) return 'bad_slot';
   const out = clearSlot(inv, slot);
   if (!out) return 'not_held';

@@ -1,21 +1,21 @@
-import { baseRef } from '../interior/interior_ref.ts';
-import { bodyOf } from '../battle/from_state.ts';
-import { deleteBattle } from '../data/battle_repo.ts';
-import { saveBattleResults } from '../data/entity_save.ts';
-import { insertCorpses } from '../data/loot_repo.ts';
-import { removeKilled } from '../data/population_repo.ts';
-import { loadWake, savePosition } from '../data/position_repo.ts';
-import { ITEM_NAME_PREFIX } from '../inventory/bag_view.ts';
-import { shareCarcasses } from '../inventory/carcass.ts';
-import { applyBattleWear } from '../inventory/combat_gear.ts';
-import type { CarcassData } from '../inventory/loot.ts';
-import type { Rng } from '../util/rng.ts';
-import { forgetVice, setViceIn } from '../vice/vice_finder.ts';
-import { killVice } from '../vice/vice_repo.ts';
-import { recordSlayer } from '../boss/boss_repo.ts';
-import type { BattleResultView } from '../../shared/battle.ts';
+import { baseRef } from '../../interior/interior_ref.ts';
+import { bodyOf } from '../../battle/from_state.ts';
+import { deleteBattle } from '../../data/battle_repo.ts';
+import { saveBattleResults } from '../../data/entity_save.ts';
+import { insertCorpses } from '../../data/loot_repo.ts';
+import { removeKilled } from '../../data/population_repo.ts';
+import { loadWake, savePosition } from '../../data/position_repo.ts';
+import { ITEM_NAME_PREFIX } from '../../inventory/bag_view.ts';
+import { shareCarcasses } from '../../inventory/carcass.ts';
+import { applyBattleWear } from '../../inventory/combat_gear.ts';
+import type { CarcassData } from '../../inventory/loot.ts';
+import type { Rng } from '../../util/rng.ts';
+import { forgetVice, setViceIn } from '../../vice/vice_finder.ts';
+import { killVice } from '../../vice/vice_repo.ts';
+import { recordSlayer } from '../../boss/boss_repo.ts';
+import type { BattleResultView } from '../../../shared/battle.ts';
 import type { Fight } from './battle_setup.ts';
-import { gridFor, inRound, populationHome, type GameWorld } from './world.ts';
+import { gridFor, inRound, populationHome, type GameWorld } from '../world.ts';
 
 // End of a field battle, saved in one transaction: growth, body, gear wear, carcasses taken, corpses left,
 // creatures killed off the field's counts, and the battle snapshot removed.
@@ -33,16 +33,18 @@ type EndWorld = { world: GameWorld; rng: Rng };
 
 export async function finishFight({ world, rng }: EndWorld, f: Fight, battleId: string): Promise<BattleResultView> {
   const { cfg, lines } = world.data;
-  const won = f.instance.winner === f.player.side;
+  const fled = f.instance.fled;
+  const won = !fled && f.instance.winner === f.player.side;
   const say = (key: string) => lines.pick(rng, key, 0, 'self')?.text;
-  const out: BattleResultView = { won, lines: [], taken: [] };
+  const out: BattleResultView = { won, fled, lines: [], taken: [] };
   const note = (key: string) => {
     const text = say(key);
     if (text) out.lines.push(text);
   };
-  note(won ? 'battle.won' : 'battle.lost');
+  note(fled ? 'battle.fled' : won ? 'battle.won' : 'battle.lost');
 
-  applyBattleWear(cfg, f.inventory, f.player.gear, won, f.player.stats.luck, rng);
+  applyBattleWear(cfg, f.inventory, f.player.gear, won || fled, f.player.stats.luck, rng);
+  for (const c of f.companions) applyBattleWear(cfg, c.inventory, c.entity.gear, won || fled, c.entity.stats.luck, rng); // companions wear their own gear
   const kills = killsOf(f, Date.now());
   let left = kills;
   if (won && kills.length > 0) {
@@ -62,14 +64,16 @@ export async function finishFight({ world, rng }: EndWorld, f: Fight, battleId: 
   if (bossFell) note('boss.fell');
   const { fieldRef } = f.order;
   const home = populationHome(world, baseRef(fieldRef)); // fought in a room: the creatures are its field's
-  const saved = won ? null : await loadWake(world.pool, f.player.id);
-  const wakeRef = won ? null : saved && inRound(world, saved) ? saved : fieldRef; // a town of an ended round does not count
+  const stays = won || fled; // a fled party keeps its body and stands where it fought; whatever was killed is left behind
+  const saved = stays ? null : await loadWake(world.pool, f.player.id);
+  const wakeRef = stays ? null : saved && inRound(world, saved) ? saved : fieldRef; // a town of an ended round does not count
   const wakeSpot = wakeRef ? (await gridFor(world, wakeRef))?.grid.spawn ?? null : null;
   const wake = wakeRef && wakeSpot ? { ref: wakeRef, ...wakeSpot } : null;
   await saveBattleResults(
     world.pool,
     [
-      { entityId: f.player.id, progress: f.state.progress, body: won ? bodyOf(f.player) : null, inventory: f.inventory },
+      { entityId: f.player.id, progress: f.state.progress, body: stays ? bodyOf(f.player) : null, inventory: f.inventory },
+      ...f.companions.map((c) => ({ entityId: c.entity.id, progress: c.state.progress, body: stays ? bodyOf(c.entity) : null, inventory: c.inventory })),
       ...[...f.vices].map(([id, v]) => ({ entityId: id, progress: v.progress, body: null })), // a vice keeps what it learned; rests to full
     ],
     async (client) => {
@@ -80,7 +84,7 @@ export async function finishFight({ world, rng }: EndWorld, f: Fight, battleId: 
       if (bossFell) await recordSlayer(client, world.roundId, f.player.id, cfg.round.closingHours); // the Demon Slayer title, same transaction
     },
   );
-  if (won) for (const line of await slainVices({ world, rng }, f)) note(line);
+  if (stays) for (const line of await slainVices({ world, rng }, f)) note(line);
   return out;
 }
 

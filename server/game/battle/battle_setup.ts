@@ -1,27 +1,29 @@
-import { baseRef } from '../interior/interior_ref.ts';
-import { applyTraits } from '../growth/traits.ts';
+import { baseRef } from '../../interior/interior_ref.ts';
+import { applyTraits } from '../../growth/traits.ts';
 import { matchMaker } from '@colyseus/core';
-import { growerEntity } from '../battle/from_state.ts';
-import { placeFoes } from '../battle/formation.ts';
-import { BattleInstance } from '../battle/instance.ts';
-import type { BattleEntity } from '../battle/types.ts';
-import { loadEntityState, type EntityState } from '../data/entity_load.ts';
-import { fieldRing } from '../data/field_repo.ts';
-import { tileAt } from '../field/types.ts';
-import { loadInventory } from '../data/item_repo.ts';
-import { mealActive, mealCosts } from '../food/food.ts';
-import { loadMeal } from '../food/food_service.ts';
-import type { Inventory } from '../inventory/bag.ts';
-import { buildCombatGear } from '../inventory/combat_gear.ts';
-import { buildCreature } from '../sim/combatants.ts';
-import type { Foe } from '../world/encounter.ts';
-import { BATTLE_ROOM } from '../../shared/battle.ts';
-import { startFighting, stopFighting } from '../util/entity_lock.ts';
-import { createRng } from '../util/rng.ts';
-import { gridFor, type GameWorld } from './world.ts';
-import { weakenedProgress } from '../boss/boss_rules.ts';
+import { growerEntity } from '../../battle/from_state.ts';
+import { placeFoes, placeParty } from '../../battle/formation.ts';
+import { BattleInstance } from '../../battle/instance.ts';
+import type { BattleEntity, Side } from '../../battle/types.ts';
+import { loadEntityState, type EntityState } from '../../data/entity_load.ts';
+import { fieldRing } from '../../data/field_repo.ts';
+import { tileAt } from '../../field/types.ts';
+import { loadInventory } from '../../data/item_repo.ts';
+import { mealActive, mealCosts } from '../../food/food.ts';
+import { loadMeal } from '../../food/food_service.ts';
+import type { Inventory } from '../../inventory/bag.ts';
+import { buildCombatGear } from '../../inventory/combat_gear.ts';
+import { buildCreature } from '../../sim/combatants.ts';
+import { companionsOf } from '../../recruit/companions.ts';
+import type { Foe } from '../../world/encounter.ts';
+import { BATTLE_ROOM } from '../../../shared/battle.ts';
+import { startFighting, stopFighting } from '../../util/entity_lock.ts';
+import { createRng } from '../../util/rng.ts';
+import { gridFor, type GameWorld } from '../world.ts';
+import { weakenedProgress } from '../../boss/boss_rules.ts';
 
-// Builds one field battle from the database: the player as saved (body, gear, loadout) against the creatures met.
+// Builds one field battle from the database: the player as saved (body, gear, loadout), their companions as saved
+// (AI fights for everyone the player does not steer), and the creatures met.
 
 // What the field room hands the battle room. The spot is where the player stands (already saved).
 export type BattleOrder = { entityId: string; name: string; fieldRef: string; x: number; y: number; foes: Foe[]; seed: number };
@@ -30,10 +32,12 @@ export type Fight = {
   order: BattleOrder;
   instance: BattleInstance;
   player: BattleEntity;
+  companions: { entity: BattleEntity; state: EntityState; inventory: Inventory }[]; // in party seats, AI steered
   foes: BattleEntity[];
   state: EntityState;
   inventory: Inventory;
   vices: Map<string, EntityState>; // battle entity id (= entity id) -> a vice's saved state, so it grows and is saved
+  summonerWith: boolean; // hidden: the party marches with the player's own summoner
   ground: { biome: string; terrain: string }; // the field tile the fight started on: the board is made of it
 };
 
@@ -75,16 +79,36 @@ export async function setUpFight(world: GameWorld, order: BattleOrder): Promise<
     if (!def) throw new Error(`unknown species ${f.species}`);
     return buildCreature(cfg, def, i + 1, f.corrupted, ring ?? cfg.rings.count, roll, slot);
   }));
+  // The player's companions: their own saved bodies, bags and gear, AI steered, in the free party seats.
+  const ids = await companionsOf(world, order.entityId); // the party row is made on first need
+  const seats = placeParty(cfg.formation, [state.slot], ids.length); // the player keeps their own place
+  const companions = await Promise.all(ids.slice(0, seats.length).map(async (id, i) => {
+    const [mate, bag] = await Promise.all([loadEntityState(world.pool, id), loadInventory(world.pool, id)]);
+    const entity = growerEntity(cfg, {
+      id, kind: mate.kind === 'summoner' ? 'summoner' : 'recruit', side: 'party', slot: seats[i],
+      speaker: 'generic', controller: 'ai',
+      progress: mate.progress, loadout: mate.loadout, bodyParts: mate.bodyParts, body: mate.body,
+      gear: buildCombatGear(cfg, world.catalog, bag),
+    });
+    for (const [k, m] of mate.raceResist) entity.resist.set(k, (entity.resist.get(k) ?? 1) * m);
+    applyTraits(entity, mate.traits);
+    return { entity, state: mate, inventory: bag };
+  }));
+  const summonerWith = companions.some((c) => c.entity.kind === 'summoner');
   const instance = new BattleInstance(world.data, {
-    entities: [player, ...foes],
-    progress: new Map([[order.entityId, state.progress], ...[...vices].map(([id, v]) => [id, v.progress] as const)]),
-    summonerSides: new Set(),
+    entities: [player, ...companions.map((c) => c.entity), ...foes],
+    progress: new Map([
+      [order.entityId, state.progress],
+      ...companions.map((c) => [c.entity.id, c.state.progress] as const),
+      ...[...vices].map(([id, v]) => [id, v.progress] as const),
+    ]),
+    summonerSides: new Set<Side>(summonerWith ? ['party'] : []),
     seed: order.seed,
   });
   const field = await gridFor(world, order.fieldRef);
   const tile = field ? tileAt(field.grid, order.x, order.y) : undefined;
   const ground = { biome: tile?.biome ?? 'meadow', terrain: tile?.terrain ?? 'grass' };
-  return { order, instance, player, foes, state, inventory, vices, ground };
+  return { order, instance, player, companions, foes, state, inventory, vices, summonerWith, ground };
 }
 
 // Snapshot shape for battle.battles.state (server only).
@@ -93,6 +117,7 @@ export function fightState(f: Fight): object {
   return {
     fieldRef, x, y, winner: f.instance.winner,
     foes: f.foes.map((e) => ({ id: e.id, corrupted: e.corrupted, hp: e.hp, stamina: e.stamina, mana: e.mana })),
+    companions: f.companions.map((c) => ({ id: c.entity.id, hp: c.entity.hp, stamina: c.entity.stamina, mana: c.entity.mana })),
   };
 }
 

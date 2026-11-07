@@ -1,5 +1,6 @@
 import { Room } from '@colyseus/core';
 import { savePosition, saveWake } from '../data/position_repo.ts';
+import { exitTiles } from '../field/exits.ts';
 import { hexOf, linkExit } from '../field/links.ts';
 import { nodeBeside, walkPlan } from '../field/nodes.ts';
 import { clearMeal, mealEndsAt } from '../food/food_service.ts';
@@ -189,6 +190,8 @@ export class FieldRoom extends Room<{ state: FieldState; client: FieldClient }> 
   private askNode(client: FieldClient, seat: Seat) {
     const node = seat.aim === null ? null : nodeBeside(this.grid, seat.walker, seat.aim);
     if (node && this.desk.isNpc(node)) return this.talkTo(client, seat, node.id);
+    const use = node && this.desk.useOf(node);
+    if (use) return this.useProp(client, seat, use);
     if (node) this.askFirst(client, seat, { kind: 'node', node: node.id, nodeKind: node.kind, dark: nodeIsDark(node, this.population) });
   }
 
@@ -219,7 +222,8 @@ export class FieldRoom extends Room<{ state: FieldState; client: FieldClient }> 
   }
 
   private exitHere(seat: Seat): string | null {
-    return this.grid.exits.find((e) => e.x === seat.walker.x && e.y === seat.walker.y)?.id ?? null;
+    const { width, height } = this.grid;
+    return exitTiles(this.grid.exits, width, height, this.kind).find((e) => e.x === seat.walker.x && e.y === seat.walker.y)?.id ?? null;
   }
 
   private askFirst(client: FieldClient, seat: Seat, pending: Pending) {
@@ -263,10 +267,19 @@ export class FieldRoom extends Room<{ state: FieldState; client: FieldClient }> 
       .catch((err: Error) => console.error(`service failed: ${err.message}`));
   }
 
+  // Beside a bed or a campfire: its service opens (sleep, cook) without going anywhere.
+  private useProp(client: FieldClient, seat: Seat, service: string) {
+    seat.door = service;
+    openService(this.ctx, seat.entityId, service)
+      .then((view) => client.send('service', view))
+      .catch((err: Error) => console.error(`service failed: ${err.message}`));
+  }
+
   // Beside an NPC: the talk opens. What is said and done there is interior/desk.ts and talk.ts.
   private talkTo(client: FieldClient, seat: Seat, id: number) {
     seat.talk = id;
-    void this.desk.open(this.rng, seat.entityId, id)?.then((v) => client.send('talk', v));
+    void this.desk.open(this.rng, seat.entityId, id)?.then((v) => client.send('talk', v))
+      .catch((err: Error) => console.error(`talk failed: ${err.message}`)); // a failed talk must never take the server down
   }
 
   private async talking(client: FieldClient, seat: Seat, req: TalkRequest) {

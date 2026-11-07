@@ -136,6 +136,9 @@ export type BattleEntity = {
   timerMs: number;
   action: PendingAction | null;
   queued: PendingAction | null;
+  lock?: { foe?: string; ally?: string }; // remembered targets of a commanded fighter
+  lastMove?: string; // remembered move of a commanded fighter
+  idleMs?: number; // time spent ready with no command
   effects: ActiveEffect[];
   tiers: Record<BodyResource, number>;
   immuneShown: Set<string>;
@@ -158,6 +161,7 @@ export type BattleEvent =
   | { type: 'downed'; entity: string }
   | { type: 'learned'; entity: string; move: string }
   | { type: 'counter'; entity: string; move: string; target: string }
+  | { type: 'lock'; entity: string; target: string }
   | { type: 'moved'; entity: string; slot: number; row: Row } // pushed to another slot (knockback)
   | { type: 'end'; winner: Side };
 

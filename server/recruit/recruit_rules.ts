@@ -94,6 +94,14 @@ export function recruitThreshold(c: RecruitConfig, totalLevels: number, lineage:
   return (c.threshold.base + c.threshold.perLevel * totalLevels) * (lineage ? c.threshold.lineageMult : 1);
 }
 
+// Whether they reach it: sure favor counts, charm counts as charm_favor each (standing config), plus town fame.
+export function recruitReady(
+  c: RecruitConfig, charmFavor: number,
+  need: { favor: number; charm: number; fame: number; levels: number; lineage: boolean },
+): boolean {
+  return need.favor + need.charm * charmFavor + need.fame >= recruitThreshold(c, need.levels, need.lineage);
+}
+
 export const mercenaryWage = (c: RecruitConfig, totalLevels: number) => Math.round(c.wage.base + c.wage.perLevel * totalLevels);
 
 const SOURCES: RecruitSource[] = ['pool', 'lineage', 'summoner', 'campfire'];

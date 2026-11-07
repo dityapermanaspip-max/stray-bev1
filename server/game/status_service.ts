@@ -6,6 +6,8 @@ import { removePiece, removeStack, stackKey } from '../inventory/bag.ts';
 import { equipGear, equipLineKey, unequipGear, unequipLineKey, type GearRef } from '../inventory/gear.ts';
 import { canSwap, equip, unequip, type SwapPlace } from '../loadout/loadout.ts';
 import { isSlot } from '../battle/formation.ts';
+import { unlocked } from '../recruit/companion_rules.ts';
+import { bearingOf, changeSeat } from '../recruit/companions.ts';
 import { buildStatusView } from '../status/status_view.ts';
 import type { Rng } from '../util/rng.ts';
 import type { DropRequest, FormationRequest, GearRequest, LoadoutRequest, StatusPanel } from '../../shared/town.ts';
@@ -21,6 +23,14 @@ const say = (c: Ctx, key: string) => c.world.data.lines.pick(c.rng, key, 0, 'sel
 const refusal = (kind: 'loadout' | 'gear' | 'formation', error: string) =>
   error === 'not_in_town' ? 'loadout.not_here' : error === 'in_battle' ? 'loadout.in_battle' : `${kind}.${error}`;
 
+// Who a write edits: the player, or one companion of theirs once the bond reaches config standing.ladder.unlocks.loadout's tier.
+// Null when the bond is too thin to touch them (or no such companion of this player exists).
+async function editTarget(c: Ctx, playerId: string, id: string | null | undefined): Promise<string | null> {
+  if (!id || id === playerId) return playerId;
+  const b = await bearingOf(c.world, c.rng, playerId, id);
+  return b && b.mine && unlocked(c.world.data.cfg.standing.ladder, 'loadout', b.tier) ? id : null;
+}
+
 // own: the player's own window (moves seen are marked); else a companion's, read only, with their name in `who`.
 export async function statusPanel(c: Ctx, entityId: string, place: SwapPlace, line: string | null = null, own = true): Promise<StatusPanel> {
   const { cfg, lines } = c.world.data;
@@ -34,8 +44,10 @@ export async function statusPanel(c: Ctx, entityId: string, place: SwapPlace, li
   return { ...view, formation: { slot: state.slot, front, back }, canSwap: own && canSwap(cfg, place) === null, line, who: own ? null : state.name };
 }
 
-export async function changeLoadout(c: Ctx, entityId: string, place: SwapPlace, req: LoadoutRequest): Promise<StatusPanel> {
+export async function changeLoadout(c: Ctx, playerId: string, place: SwapPlace, req: LoadoutRequest): Promise<StatusPanel | null> {
   const { cfg, moves } = c.world.data;
+  const entityId = await editTarget(c, playerId, req?.id);
+  if (!entityId) return null;
   const state = await loadEntityState(c.world.pool, entityId);
   const slot = Math.floor(Number(req?.slot));
   const error = req?.move ? equip(cfg, state.loadout, state.progress, moves, slot, String(req.move), place) : unequip(cfg, state.loadout, slot, place);
@@ -44,8 +56,10 @@ export async function changeLoadout(c: Ctx, entityId: string, place: SwapPlace, 
   return statusPanel(c, entityId, place);
 }
 
-export async function changeGear(c: Ctx, entityId: string, place: SwapPlace, req: GearRequest): Promise<StatusPanel> {
+export async function changeGear(c: Ctx, playerId: string, place: SwapPlace, req: GearRequest): Promise<StatusPanel | null> {
   const { cfg } = c.world.data;
+  const entityId = await editTarget(c, playerId, req?.id);
+  if (!entityId) return null;
   const [state, inv] = await Promise.all([loadEntityState(c.world.pool, entityId), loadInventory(c.world.pool, entityId)]);
   let change;
   if (req && 'remove' in req) {
@@ -62,10 +76,18 @@ export async function changeGear(c: Ctx, entityId: string, place: SwapPlace, req
   return statusPanel(c, entityId, place, say(c, change.learned ? 'epiphany_weapon' : key));
 }
 
-// Picks the player's own battle slot (companions will share this rule once parties exist).
-export async function changeSlot(c: Ctx, entityId: string, place: SwapPlace, req: FormationRequest): Promise<StatusPanel> {
+// Picks a battle place: the player's own slot (chosen in town). For a companion it is their place in the party,
+// the order they fill the free battle seats in — written to social.party_members (companion_rules plain functions).
+export async function changeSlot(c: Ctx, playerId: string, place: SwapPlace, req: FormationRequest): Promise<StatusPanel | null> {
   const { cfg } = c.world.data;
+  const entityId = await editTarget(c, playerId, req?.id);
+  if (!entityId) return null;
   const slot = Math.floor(Number(req?.slot));
+  if (entityId !== playerId) {
+    return (await changeSeat(c.world, playerId, entityId, slot))
+      ? statusPanel(c, entityId, place)
+      : statusPanel(c, entityId, place, say(c, refusal('formation', 'bad_slot')));
+  }
   const error = canSwap(cfg, place) ?? (isSlot(cfg.formation, slot) ? null : 'bad_slot');
   if (error) return statusPanel(c, entityId, place, say(c, refusal('formation', error)));
   await saveSlot(c.world.pool, entityId, slot);

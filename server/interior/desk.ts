@@ -9,7 +9,7 @@ import type { PopRow } from '../world/population.ts';
 import type { FieldView } from '../../shared/field.ts';
 import type { TalkRequest } from '../../shared/talk.ts';
 import { interiorRef, parseInterior, type InteriorRef } from './interior_ref.ts';
-import { placeNpcs, withNpcs, type Placed } from './npc_place.ts';
+import { placeNpcs, USE_PREFIX, withNpcs, type Placed } from './npc_place.ts';
 import { talkAct, talkView, type TalkOut } from './talk.ts';
 import type { TalkView } from '../../shared/talk.ts';
 
@@ -33,7 +33,7 @@ export class RoomDesk {
     const layout = this.room && this.world.data.cfg.interior.rooms[this.room.kind];
     if (!this.room || !layout) return { grid: base, view };
     this.npcs = await placeNpcs(this.world, rng, this.room, layout);
-    const grid = withNpcs(base, this.npcs);
+    const grid = withNpcs(base, this.npcs, layout.props);
     const tiles = view.tiles.map((t, i) => ({ ...t, w: grid.tiles[i].walkable }));
     return { grid, view: { ...view, tiles, npcs: this.npcs.map((n) => ({ id: n.id, x: n.x, y: n.y, name: n.name, role: n.role, sex: n.sex, look: n.look })) } };
   }
@@ -49,6 +49,8 @@ export class RoomDesk {
   }
 
   isNpc = (node: ResourceNode) => node.kind === 'npc';
+  // The service of a bed or a campfire (a prop worked from beside it), else null.
+  useOf = (node: ResourceNode): string | null => (node.kind.startsWith(USE_PREFIX) ? node.kind.slice(USE_PREFIX.length) : null);
 
   private ctx(rng: Rng, playerId: string) {
     return { world: this.world, rng, playerId, townRef: this.room?.parent ?? this.ref };

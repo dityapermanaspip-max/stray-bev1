@@ -18,6 +18,7 @@ export function findInteriorProblems(raw: unknown, lineKeys: Set<string>): strin
       ...(lineKeys.has(SERVICE_NAME_PREFIX + k) ? [] : [`interior wild ${k}: no ${SERVICE_NAME_PREFIX} line`]),
     ]),
     ...Object.keys(cfg.rooms).filter((k) => !cfg.wild[k] && !lineKeys.has(SERVICE_NAME_PREFIX + k)).map((k) => `interior ${k}: no ${SERVICE_NAME_PREFIX} line`),
+    ...Object.entries(cfg.rooms).flatMap(([name, l]) => l.props.flatMap((p) => (p.use && !lineKeys.has(SERVICE_NAME_PREFIX + p.use) ? [`interior ${name}: prop use ${p.use} has no ${SERVICE_NAME_PREFIX} line`] : []))),
     ...TALK_ACTS.filter((a) => !lineKeys.has(TALK_OPT_PREFIX + a)).map((a) => `talk choice ${a}: no ${TALK_OPT_PREFIX} line`),
   ];
 }

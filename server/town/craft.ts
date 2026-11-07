@@ -13,22 +13,23 @@ export type RecipeView = { name: string; outputs: ItemQty[]; inputs: (ItemQty & 
 
 const valueOf = (catalog: ItemCatalog, xs: ItemQty[]) => xs.reduce((sum, x) => sum + (catalog.get(x.item)?.value ?? 0) * x.qty, 0);
 
-export const feeFor = (cfg: BalanceConfig, catalog: ItemCatalog, r: Recipe) => craftFee(cfg.economy, valueOf(catalog, r.inputs), valueOf(catalog, r.outputs));
+// free: your own fire (a camp's campfire has no craftsman and no town purse): no fee.
+export const feeFor = (cfg: BalanceConfig, catalog: ItemCatalog, r: Recipe, free = false) => free ? 0 : craftFee(cfg.economy, valueOf(catalog, r.inputs), valueOf(catalog, r.outputs));
 
 // What this craftsman makes at their level.
 export const recipesAt = (recipes: Recipe[], facility: string, level: number) => recipes.filter((r) => r.facility === facility && r.level <= level);
 
-export function recipeViews(cfg: BalanceConfig, catalog: ItemCatalog, recipes: Recipe[], inv: Inventory): RecipeView[] {
+export function recipeViews(cfg: BalanceConfig, catalog: ItemCatalog, recipes: Recipe[], inv: Inventory, free = false): RecipeView[] {
   return recipes.map((r) => ({
-    name: r.name, outputs: r.outputs, fee: feeFor(cfg, catalog, r),
+    name: r.name, outputs: r.outputs, fee: feeFor(cfg, catalog, r, free),
     inputs: r.inputs.map((x) => ({ ...x, have: countOf(inv, x.item) })),
   }));
 }
 
 // Makes one batch. Answers the fee paid, or a line key on refusal.
-export function craftOnce(cfg: BalanceConfig, catalog: ItemCatalog, r: Recipe, inv: Inventory): { fee: number; line: string } | string {
+export function craftOnce(cfg: BalanceConfig, catalog: ItemCatalog, r: Recipe, inv: Inventory, free = false): { fee: number; line: string } | string {
   if (r.inputs.some((x) => countOf(inv, x.item) < x.qty)) return 'town.craft.missing';
-  const fee = feeFor(cfg, catalog, r);
+  const fee = feeFor(cfg, catalog, r, free);
   if (coinTotal(cfg, inv) < fee) return 'town.craft.cannot_pay';
   for (const x of r.inputs) removeItem(inv, x.item, x.qty);
   payCoins(cfg, catalog, inv, fee);

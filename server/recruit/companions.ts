@@ -12,6 +12,7 @@ import { addFavor } from '../standing/standing_repo.ts';
 import type { Rng } from '../util/rng.ts';
 import { worldHourMs } from '../world/clock.ts';
 import { freeSeat, paidUntil, unlocked } from './companion_rules.ts';
+import { recruitConfig, recruitReady, type RecruitConfig } from './recruit_rules.ts';
 
 // Talking to, gifting, hiring, recruiting, paying and letting go of NPCs, by favor tier (docs/DECISIONS.md, Favor
 // ladder). Every answer is a line key's sentence or null; no favor, tier or wage number ever leaves here.
@@ -19,26 +20,37 @@ import { freeSeat, paidUntil, unlocked } from './companion_rules.ts';
 
 export type Reply = { line: string | null; ok: boolean };
 
-type Npc = { id: string; kind: string; ref: string | null; sex: string | null; wage: number | null; inParty: boolean; mine: boolean; own: boolean };
+type Npc = {
+  id: string; kind: string; ref: string | null; sex: string | null; wage: number | null;
+  inParty: boolean; mine: boolean; own: boolean;
+  lineage: boolean; parentId: string | null; // a keeper's or notable's child: inherits and joins deeper into trust
+};
 type Pair = { npc: Npc; base: number; cap: number; favor: number; fame: number; charm: number; tier: number };
 
 const say = (w: GameWorld, rng: Rng, key: string) => w.data.lines.pick(rng, key, 0, 'self')?.text ?? null;
-const reply = (w: GameWorld, rng: Rng, key: string, ok: boolean): Reply => ({ line: say(w, rng, key), ok });
+const reply = (w: GameWorld, rng: Rng, key: string, ok: boolean): Reply => ({ line: say(w, rng, key), ok: ok });
 
 async function loadNpc(w: GameWorld, playerId: string, npcId: string): Promise<Npc | null> {
-  const res = await w.pool.query<{ id: string; kind: string; ref: string | null; sex: string | null; wage: number | null; party: string | null; owner: string | null; own: boolean }>(
-    `SELECT e.id::text AS id, e.kind, e.location_ref AS ref, e.body_type AS sex, tr.wage_per_day AS wage,
+  const res = await w.pool.query<{
+    id: string; kind: string; ref: string | null; sex: string | null; wage: number | null; party: string | null; owner: string | null;
+    own: boolean; lineage: boolean; parent: string | null;
+  }>(
+    `SELECT e.id::text AS id, e.kind, e.location_ref AS ref, e.body_type AS sex, r.wage_per_day AS wage,
             pm.party_id::text AS party, p.player_entity_id::text AS owner,
+            r.source = 'lineage' AS lineage, r.parent_id::text AS parent,
             EXISTS (SELECT 1 FROM entity.entities pl WHERE pl.id::text = $2 AND pl.summoner_id = e.id) AS own
      FROM entity.entities e
-     LEFT JOIN world.town_recruits tr ON tr.entity_id = e.id
+     LEFT JOIN world.town_recruits r ON r.entity_id = e.id
      LEFT JOIN social.party_members pm ON pm.entity_id = e.id
      LEFT JOIN social.parties p ON p.id = pm.party_id
      WHERE e.id::text = $1 AND e.alive AND e.kind IN ('recruit', 'summoner', 'native')`,
     [npcId, playerId],
   );
   const r = res.rows[0];
-  return r ? { id: r.id, kind: r.kind, ref: r.ref, sex: r.sex, wage: r.wage, inParty: r.party !== null, mine: r.owner === playerId, own: r.own } : null;
+  return r ? {
+    id: r.id, kind: r.kind, ref: r.ref, sex: r.sex, wage: r.wage, inParty: r.party !== null, mine: r.owner === playerId,
+    own: r.own, lineage: r.lineage === true, parentId: r.parent,
+  } : null;
 }
 
 const roleOf = (n: Npc) => (n.wage !== null ? 'mercenary' : n.kind === 'summoner' ? 'summoner' : n.kind === 'recruit' ? 'recruit' : 'default');
@@ -60,12 +72,59 @@ async function pairWith(w: GameWorld, rng: Rng, playerId: string, npc: Npc): Pro
   return { npc, base, cap, favor, fame: Number(row.rows[0]?.fame ?? 0), charm: progressStats(state.progress).charm, tier: tierOf(l, base, favor, cap) };
 }
 
-// One talk: favor from charm and fame, at most talk_cap per NPC per tick. Crossing a tier says so.
+// The hidden recruit numbers, read when a recruit is judged (inheritance, the join threshold).
+async function recruitCfg(w: GameWorld): Promise<RecruitConfig> {
+  const raw = await w.pool.query<{ value: Record<string, unknown> }>(
+    "SELECT value FROM config.balance_config WHERE config_key = 'recruit'",
+  );
+  if (!raw.rows[0]) throw new Error('balance_config recruit is missing');
+  return recruitConfig(raw.rows[0].value);
+}
+
+// A lineage recruit starts with up to inherit_share of the player's favor with the parent (config recruit),
+// once: only where no favor row exists yet. Their first contact counts this in.
+async function seedInherited(w: GameWorld, playerId: string, npc: Npc): Promise<void> {
+  if (!npc.lineage || !npc.parentId) return;
+  const met = await w.pool.query('SELECT 1 FROM social.favor WHERE entity_id = $1 AND target_id = $2', [playerId, npc.id]);
+  if (met.rowCount) return;
+  const parent = await w.pool.query<{ favor: string | null }>(
+    'SELECT favor FROM social.favor WHERE entity_id = $1 AND target_id = $2', [playerId, npc.parentId],
+  );
+  const inherited = Math.floor(Number(parent.rows[0]?.favor ?? 0) * (await recruitCfg(w)).inheritShare);
+  if (inherited > 0) await addFavor(w.pool, playerId, npc.id, inherited);
+}
+
+// Total battle move levels of a recruit (the threshold reads them): life skills and passives stay out.
+function battleLevels(w: GameWorld, progress: { moves: Map<string, { level: number }> }): number {
+  let sum = 0;
+  for (const [name, known] of progress.moves) {
+    const category = w.data.moves.get(name)?.category;
+    if (category && category !== 'life' && category !== 'passive') sum += known.level;
+  }
+  return sum;
+}
+
+// An unbound lineage child of this NPC in the same town (the offer: the parent sends them).
+async function childOfParent(w: GameWorld, npcId: string): Promise<string | null> {
+  const res = await w.pool.query<{ id: string; role: string }>(
+    `SELECT r.entity_id::text AS id FROM world.town_recruits r
+     JOIN entity.entities e ON e.id = r.entity_id
+     WHERE r.parent_id::text = $1 AND r.source = 'lineage' AND e.recruited_by IS NULL AND e.bound_to IS NULL
+       AND NOT EXISTS (SELECT 1 FROM social.party_members pm WHERE pm.entity_id = r.entity_id) LIMIT 1`,
+    [npcId],
+  );
+  return res.rows[0]?.id ?? null;
+}
+
+// One talk: favor from charm and fame, at most talk_cap per NPC per tick. Crossing a tier says so. A keeper
+// reached past the offer tier whose lineage child waits unbound sends that child instead of small talk.
 export async function talkNpc(w: GameWorld, rng: Rng, playerId: string, npcId: string): Promise<Reply> {
   const npc = await loadNpc(w, playerId, npcId);
   if (!npc) return { line: null, ok: false };
   const l = w.data.cfg.standing.ladder;
+  await seedInherited(w, playerId, npc);
   const p = await pairWith(w, rng, playerId, npc);
+  if (p.tier >= (l.unlocks['butcher_child'] ?? l.tiers) && (await childOfParent(w, npcId))) return reply(w, rng, 'npc.offer', true);
   const { hours } = await readClock(w.pool, w.roundId);
   const added = await talkTo(w.pool, l, playerId, npcId, hours, talkFavor(l, p.charm, p.fame));
   if (added === 0) return reply(w, rng, 'npc.tired', false);
@@ -138,12 +197,23 @@ export async function hireNpc(w: GameWorld, rng: Rng, playerId: string, npcId: s
   return reply(w, rng, 'recruit.hired', true);
 }
 
-// Recruit for good, from the party tier. The player's own summoner starts there.
+// Recruit for good. A pool or summoner recruit joins from the party tier; a keeper's or notable's child waits
+// until the deeper trust tier (butcher_child, config). Recruits must also reach the hidden threshold
+// (favor + charm + fame vs their total move levels); the player's own summoner starts deep enough already.
 export async function recruitNpc(w: GameWorld, rng: Rng, playerId: string, npcId: string): Promise<Reply> {
   const npc = await loadNpc(w, playerId, npcId);
   if (!npc || npc.kind === 'native' || npc.inParty || (npc.kind === 'summoner' && !npc.own)) return reply(w, rng, 'recruit.refuse', false); // a summoner is only their own player's
+  const l = w.data.cfg.standing.ladder;
+  const tier = npc.lineage ? 'butcher_child' : 'party'; // a lineage child joins deeper in (config standing.ladder.unlocks)
+  await seedInherited(w, playerId, npc); // the parent's favor carries over to the child, once, and both gates read it
   const p = await pairWith(w, rng, playerId, npc);
-  if (!unlocked(w.data.cfg.standing.ladder, 'party', p.tier)) return reply(w, rng, 'recruit.refuse', false);
+  if (!unlocked(l, tier, p.tier)) return reply(w, rng, 'recruit.refuse', false);
+  if (npc.kind === 'recruit') {
+    const levels = battleLevels(w, (await loadEntityState(w.pool, npc.id)).progress);
+    if (!recruitReady(await recruitCfg(w), w.data.cfg.standing.charmFavor, {
+      favor: p.favor, charm: p.charm, fame: p.fame, levels, lineage: npc.lineage,
+    })) return reply(w, rng, 'recruit.refuse', false);
+  }
   return (await join(w, playerId, npc, 'permanent', null)) ? reply(w, rng, 'recruit.joined', true) : reply(w, rng, 'recruit.full', false);
 }
 
@@ -185,4 +255,20 @@ export async function companionsOf(w: GameWorld, playerId: string): Promise<stri
   const party = await partyOf(w, playerId);
   const res = await w.pool.query<{ id: string }>('SELECT entity_id::text AS id FROM social.party_members WHERE party_id = $1 ORDER BY slot', [party.id]);
   return res.rows.map((r) => r.id);
+}
+
+// A companion's place in the party (1..party_max-1): the order they take the free battle places in, front first.
+// The seat must sit inside the range and no one else may hold it.
+export async function changeSeat(w: GameWorld, playerId: string, npcId: string, seat: number): Promise<boolean> {
+  const party = await partyOf(w, playerId);
+  if (!Number.isInteger(seat) || seat < 1 || seat > w.data.cfg.formation.partyMax - 1) return false;
+  const res = await w.pool.query<{ members: string[]; slots: number[] }>(
+    'SELECT array_agg(entity_id::text) AS members, array_agg(slot) AS slots FROM social.party_members WHERE party_id = $1', [party.id],
+  );
+  const members = res.rows[0]?.members ?? [];
+  const slots = res.rows[0]?.slots ?? [];
+  const at = members.indexOf(npcId);
+  if (at < 0 || slots.some((s, i) => i !== at && s === seat)) return false;
+  await w.pool.query('UPDATE social.party_members SET slot = $2 WHERE party_id = $1 AND entity_id = $3', [party.id, seat, npcId]);
+  return true;
 }

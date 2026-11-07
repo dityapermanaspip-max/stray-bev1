@@ -1,4 +1,4 @@
-import type { RoomLayout, Seat } from '../config/interior_config.ts';
+import type { Prop, RoomLayout, Seat } from '../config/interior_config.ts';
 import { tileAt, type FieldGrid } from '../field/types.ts';
 import type { GameWorld } from '../game/world.ts';
 import { keeperFor } from '../standing/standing_repo.ts';
@@ -39,14 +39,20 @@ export async function placeNpcs(world: GameWorld, rng: Rng, room: InteriorRef, l
 }
 
 // The room's grid with the NPCs standing in it: their tiles blocked, each a node of kind 'npc' (id = Placed.id).
+// Props with a `use` (a bed, a campfire) are nodes too, kind `use:<service>`, one per tile: walk up to one and its service opens.
 // A copy: the cached base grid stays empty.
-export function withNpcs(base: FieldGrid, npcs: Placed[]): FieldGrid {
+export const USE_PREFIX = 'use:';
+export function withNpcs(base: FieldGrid, npcs: Placed[], props: Prop[] = []): FieldGrid {
   const grid: FieldGrid = { ...base, tiles: base.tiles.map((t) => ({ ...t })), nodes: [] };
   for (const n of npcs) {
     const t = tileAt(grid, n.x, n.y);
     if (!t) continue;
     t.walkable = false;
     grid.nodes.push({ id: n.id, kind: 'npc', x: n.x, y: n.y, rank: 0 });
+  }
+  for (const p of props) {
+    if (!p.use) continue;
+    for (let dy = 0; dy < p.h; dy++) for (let dx = 0; dx < p.w; dx++) grid.nodes.push({ id: grid.nodes.length, kind: USE_PREFIX + p.use, x: p.x + dx, y: p.y + dy, rank: 0 });
   }
   return grid;
 }

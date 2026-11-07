@@ -1,6 +1,6 @@
 // Typed view of the `interior` key of balance_config (server only). See seeds/35_interiors/01_config.sql.
 
-export type Prop = { terrain: string; x: number; y: number; w: number; h: number }; // blocked furniture
+export type Prop = { terrain: string; x: number; y: number; w: number; h: number; use?: string }; // blocked furniture; use: a service worked from beside it (a bed: camp, a campfire: cook)
 export type Seat = { x: number; y: number; look?: string }; // look: the actor sheet of whoever sits or stands here (a keeper)
 // One room. Tiles at x = 0 or y = 0 are the back walls (the camera-facing sides stay open); the exit is the
 // middle of the last row. keeper: where the door's NPC stands; guests: where recruits sit; rest: a tile that asks
@@ -16,7 +16,7 @@ export type InteriorConfig = { rooms: Record<string, RoomLayout>; wild: Record<s
 type Raw = {
   rooms: Record<string, {
     biome: string; w: number; h: number; floor: string; wall: string | null;
-    props: { terrain: string; x: number; y: number; w?: number; h?: number }[];
+    props: { terrain: string; x: number; y: number; w?: number; h?: number; use?: string }[];
     keeper: Seat | null; guests: Seat[]; rest: (Seat & { service: string }) | null;
   }>;
   wild: Record<string, { rest_price: number; ambush_permille: number }>;

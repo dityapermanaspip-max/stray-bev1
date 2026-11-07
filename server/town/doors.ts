@@ -43,7 +43,7 @@ function shopView(c: DoorCtx, town: Town, inv: Inventory, talk: ShopTalk): NonNu
 }
 
 function craftView(c: DoorCtx, service: string, town: Town | null, inv: Inventory): NonNullable<ServiceView['craft']> {
-  const recipes = recipeViews(c.world.data.cfg, c.world.catalog, recipesHere(c, service, town), inv);
+  const recipes = recipeViews(c.world.data.cfg, c.world.catalog, recipesHere(c, service, town), inv, town === null); // no town: a camp's own fire, no fee
   return {
     recipes: recipes.map((r) => ({
       name: r.name, fee: r.fee,
@@ -112,7 +112,7 @@ export async function useService(c: DoorCtx, entityId: string, service: string, 
     const town = await townOf(c);
     const recipe = recipesHere(c, service, town).find((r) => r.name === req.name);
     if (!recipe) return view(c, service, inv, town, null);
-    const done = craftOnce(cfg, catalog, recipe, inv);
+    const done = craftOnce(cfg, catalog, recipe, inv, town === null);
     if (typeof done === 'string') return view(c, service, inv, town, say(c, done));
     // The fee goes to the town's purse when the town keeps one.
     if (town) await saveTrade(pool, entityId, inv, town.ref, [], done.fee);

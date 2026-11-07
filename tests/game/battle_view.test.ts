@@ -3,9 +3,9 @@ import { test } from 'node:test';
 import { createProgress } from '../../server/battle/factory.ts';
 import { BattleInstance } from '../../server/battle/instance.ts';
 import type { BattleEvent } from '../../server/battle/types.ts';
-import { killsOf } from '../../server/game/battle_end.ts';
-import type { Fight } from '../../server/game/battle_setup.ts';
-import { battleView, eventsFor, type Words } from '../../server/game/battle_view.ts';
+import { killsOf } from '../../server/game/battle/battle_end.ts';
+import type { Fight } from '../../server/game/battle/battle_setup.ts';
+import { battleView, eventsFor, type Words } from '../../server/game/battle/battle_view.ts';
 import { LinePicker } from '../../server/presentation/line_picker.ts';
 import { createRng } from '../../server/util/rng.ts';
 import { battleData, fighter, MOVES, stats } from '../fixtures/battle_data.ts';
@@ -21,14 +21,17 @@ const words: Words = {
   moves: MOVES,
 };
 
-function fight(): Fight {
+function fight(companions: Fight['companions'] = []): Fight {
   const player = fighter('me', 'party');
   const foes = [fighter('cat_1', 'enemy'), fighter('cat_2', 'enemy', { corrupted: false })];
   const progress = createProgress(player.stats, [{ name: 'punch', level: 1 }]);
-  const instance = new BattleInstance(battleData(), { entities: [player, ...foes], progress: new Map([['me', progress]]), summonerSides: new Set(), seed: 1 });
+  const instance = new BattleInstance(battleData(), {
+    entities: [player, ...companions.map((c) => c.entity), ...foes],
+    progress: new Map([['me', progress]]), summonerSides: new Set(), seed: 1,
+  });
   return {
     order: { entityId: 'me', name: 'walker1', fieldRef: 'f', x: 0, y: 0, seed: 1, foes: [{ species: 'cat', corrupted: true }, { species: 'cat', corrupted: false }] },
-    instance, player, foes, vices: new Map(), ground: { biome: 'meadow', terrain: 'grass' },
+    instance, player, foes, companions, summonerWith: false, vices: new Map(), ground: { biome: 'meadow', terrain: 'grass' },
     state: { id: 'me', kind: 'player', name: 'walker1', bodyParts: [], progress, loadout: new Map([[1, 'punch']]), body: null, unseen: new Set(), slot: 1, traits: [], raceResist: new Map() },
     inventory: { pieces: [], stacks: [] } as unknown as Fight['inventory'],
   };
@@ -77,6 +80,21 @@ test('kills are the fallen foes, with species and corruption from the encounter'
   assert.equal(kills[0].species, 'cat');
   assert.equal(kills[0].corrupted, false);
   assert.equal(kills[0].killedAt, 5);
+});
+
+test('a companion shows their own name and health, not a species line', () => {
+  const mate = fighter('mate_1', 'party', { kind: 'recruit', controller: 'ai', slot: 2, speaker: 'generic' });
+  const f = fight([{
+    entity: mate,
+    state: { id: 'mate_1', kind: 'recruit', name: 'Brinn', bodyParts: [], progress: createProgress(mate.stats, []), loadout: new Map(), body: null, unseen: new Set(), slot: 2, traits: [], raceResist: new Map() },
+    inventory: { pieces: [], stacks: [] } as unknown as Fight['companions'][number]['inventory'],
+  }]);
+  const view = battleView(words, f, 8, { front: 4, back: 3 });
+  const m = view.fighters.find((x) => x.id === 'mate_1')!;
+  assert.equal(m.name, 'Brinn');
+  assert.equal(m.side, 'party');
+  assert.equal(m.hp.text, 'hp5'); // body tier word, no numbers
+  assert.equal(m.stamina, null); // an ally's gauge stays hidden
 });
 
 test('a player-controlled fighter with nothing usable passes the turn instead of waiting forever', () => {

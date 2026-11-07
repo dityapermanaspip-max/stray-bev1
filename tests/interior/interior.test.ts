@@ -52,3 +52,22 @@ test('a room exit leads back to where it hangs off', () => {
   assert.deepEqual(linkExit(links, 'H1~camp.3', 'door'), { ref: 'H1', exit: 'node:3' });
   assert.equal(linkExit(links, 'T1~shop', 'gate'), null);
 });
+
+test('a camp: the bed and the campfire are props worked from beside them, and both can be reached', async () => {
+  const { walkPlan, nodeBeside } = await import('../../server/field/nodes.ts');
+  const camp: RoomLayout = {
+    biome: 'camp', w: 9, h: 9, floor: 'camp_ground', wall: 'camp_trees',
+    props: [{ terrain: 'campfire', x: 4, y: 3, w: 1, h: 1, use: 'cook' }, { terrain: 'log', x: 2, y: 3, w: 1, h: 1 }, { terrain: 'bed', x: 7, y: 5, w: 1, h: 2, use: 'camp' }],
+    keeper: null, guests: [], rest: null,
+  };
+  assert.deepEqual(findRoomProblems('camp', camp), []);
+  const grid = withNpcs(buildInterior(camp), [], camp.props);
+  assert.deepEqual(grid.nodes.map((n) => [n.kind, n.x, n.y]), [['use:cook', 4, 3], ['use:camp', 7, 5], ['use:camp', 7, 6]]);
+  for (const n of grid.nodes) {
+    const plan = walkPlan(grid, grid.spawn, { x: n.x, y: n.y }, 100);
+    assert.equal(plan.node?.id, n.id);
+    assert.ok(plan.path && plan.path.length > 0, `${n.kind} at ${n.x},${n.y} can be walked up to`);
+    const end = plan.path![plan.path!.length - 1];
+    assert.equal(nodeBeside(grid, end, n.id)?.id, n.id);
+  }
+});

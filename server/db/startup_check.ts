@@ -52,7 +52,7 @@ export const TOWN_LINE_KEYS = [
   // the shopkeeper's standing (standing/shop_standing.ts); greetings also need tiers 1-3 (checked below)
   'town.shop.greet', 'town.shop.refuse',
   // talking to, gifting, hiring and recruiting NPCs (recruit/companions.ts)
-  'npc.talk', 'npc.tired', 'npc.tier_up', 'npc.gift', 'npc.gift_no',
+  'npc.talk', 'npc.tired', 'npc.tier_up', 'npc.offer', 'npc.gift', 'npc.gift_no',
   'npc.greet', 'ask.wild', 'wild.rested', // rooms: an NPC's greeting, the question at a camp or cave, a night there
   'recruit.refuse', 'recruit.hired', 'recruit.joined', 'recruit.full', 'recruit.no_money', 'recruit.paid', 'recruit.dismissed', 'town.shop.haggle_won', 'town.shop.haggle_lost', 'town.shop.generous', 'town.shop.pushover',
   // status window refusals (game/status_service.ts)

@@ -34,6 +34,15 @@ export function placeFoes(f: FormationConfig, count: number): number[] {
   return Array.from({ length: Math.min(count, f.enemyMax, slotCount(f)) }, (_, i) => i + 1);
 }
 
+// Party seats for a fight: the player keeps their own place (saved in town); companions take the remaining
+// slots front first, at most party_max together. Every side numbers its own slots the same way.
+export function placeParty(f: FormationConfig, taken: readonly number[], count: number): number[] {
+  const seats = Math.max(0, Math.min(count, f.partyMax - taken.length));
+  return Array.from({ length: slotCount(f) }, (_, i) => i + 1)
+    .filter((s) => !taken.includes(s))
+    .slice(0, seats);
+}
+
 export function findFormationProblems(f: FormationConfig): string[] {
   const out: string[] = [];
   if (!(f.front >= 1) || !(f.back >= 0)) out.push('battle.formation: front must be 1 or more, back 0 or more');

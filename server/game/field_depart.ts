@@ -6,7 +6,7 @@ import { travelTo } from '../map/travel.ts';
 import type { Rng } from '../util/rng.ts';
 import type { Foe } from '../world/encounter.ts';
 import type { EncounterNotice, TravelOrder } from '../../shared/field.ts';
-import { openBattle, type BattleOrder } from './battle_setup.ts';
+import { openBattle, type BattleOrder } from './battle/battle_setup.ts';
 import type { FieldClient, FieldState, Seat } from './field_state.ts';
 import type { GameWorld } from './world.ts';
 
@@ -40,7 +40,7 @@ export async function startBattle(h: DepartHost, client: FieldClient, seat: Seat
 export function sendTo(h: DepartHost, client: FieldClient, seat: Seat, target: ExitTarget, fromTown: string | null): void {
   seat.leaving = true;
   seat.walker.path = [];
-  void travelTo(h.world, seat.entityId, target, fromTown, seat.walker).then(() => {
+  void travelTo(h.world, seat.entityId, target, fromTown, seat.walker, h.ref).then(() => {
     client.send('travel', { ref: target.ref } satisfies TravelOrder);
     h.clock.setTimeout(() => client.leave(CloseCode.CONSENTED), TRAVEL_GRACE_MS);
   }).catch((err: Error) => console.error(`travel failed: ${err.message}`));

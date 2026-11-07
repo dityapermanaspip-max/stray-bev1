@@ -13,6 +13,7 @@ import { loadRecipes, type Recipe } from '../data/economy_repo.ts';
 import { loadBattleData, loadSpecies, type SpeciesDef } from '../data/species_repo.ts';
 import { buildInterior } from '../interior/interior_grid.ts';
 import { parseInterior } from '../interior/interior_ref.ts';
+import { exitTiles } from '../field/exits.ts';
 import { generateField } from '../field/generate.ts';
 import { loadNodeLoot } from '../gather/gather_repo.ts';
 import { placeNodes } from '../field/nodes.ts';
@@ -85,7 +86,7 @@ export function fieldView(ref: string, kind: FieldKind, g: FieldGrid, rank: stri
   return {
     ref, rank, kind, width: g.width, height: g.height,
     tiles: g.tiles.map((t) => ({ t: t.terrain, b: t.biome, h: t.height, w: t.walkable, s: t.slope ?? -1, safe: !!t.safe, door: t.service ?? null })),
-    exits: g.exits.map((e) => ({ id: e.id, x: e.x, y: e.y })),
+    exits: exitTiles(g.exits, g.width, g.height, kind).map((e) => ({ id: e.id, x: e.x, y: e.y })), // widened: the client draws every tile
     nodes: g.nodes.filter((n) => n.kind !== 'npc').map((n) => ({ x: n.x, y: n.y, kind: n.kind })),
     npcs: [],
   };
